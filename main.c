@@ -25,9 +25,6 @@
 #define ARMED 1
 #define ACTIVE 2
 
-#define CLOCK_OFF 0
-#define CLOCK_ON 1
-
 #define FORECAST 1
 #define CURRENT_TIME 2
 #define AM_OR_PM 3
@@ -61,7 +58,6 @@ u8g2_t u8g2;
 
 void test(struct Reading *reading);
 void receive_data(struct Reading *reading);
-uint16_t read_temp(void);
 void read_accel(struct Reading *reading);
 void debug_temphumid(void);
 void debug_accel(void);
@@ -76,7 +72,7 @@ void mode_A(struct Reading *reading);
 void mode_C(struct Reading reading);
 void transition_state(struct Reading *reading);
 void clear_alarm_flags(void);
-static uint8_t count = 0, times = 0;
+static uint8_t count = 0;
 void display_alarm_time(struct Reading *reading);
 
 /*
@@ -107,14 +103,12 @@ int main (void)
 	
 	reads.celsius = 1;
 	
-	reads.hours = 0x19;
+	reads.hours = 0x00;
 	reads.minutes = 0x59;
 	reads.seconds = 0x49;
 	reads.hourtype = FULLDAY;
-	reads.AmPm = PM;
-	reads.alarmhour = 0x12;
+	reads.alarmhour = 0x23;
 	reads.alarmmin = 0x01;
-	reads.alarmAmPm = PM;
 	reads.alarmstate = DEACTIVATED;
 	set_clock(&reads);
 	set_alarm(reads);
@@ -125,8 +119,6 @@ int main (void)
 	char current_mode;
 	uart_init(UART_BAUD_SELECT(9600, F_CPU));
 	sei();
-	int counting = 0;
-	char sample_buffer[100];
 	while(1) {
 		read_accel(&reads);
 		read_clock(&reads);
@@ -152,10 +144,18 @@ int main (void)
 			}
 		}
 		
+		// Receive messages from Seeduino Xiao and Process them
 		if (uart_available()) {
 			receive_data(&reads);
 		}
 		//test(&reads);
+		// Send messages to the Seeduino Xiao
+		// Send to the seeduino:
+		// Accelerometer Axis readings (X,Y,Z)
+		// reading->hourType to let it know if its in 12 hour to 24 hour mode
+		// reading->alarmhour, reading->alarmminute, and reading->alarmstate to let it know the alarm time and state (active or not)
+		// current forecast data (the current day?)
+		// the unit selection (fahrenheiht or celcius) (reading->celcius)
 
 	
 		_delay_ms(20);
@@ -180,7 +180,6 @@ void test(struct Reading *reading) {
 void receive_data(struct Reading *reading) {
 	char buffer[16];
 	char data;
-	uint8_t result;
 	for (int i = 0; i < 16; i++) {
 		data = uart_getc();
 		if (data == '\0') {
@@ -191,7 +190,7 @@ void receive_data(struct Reading *reading) {
 		}
 	}
 	if (strcmp(buffer, "forecast") == 0 ) { // If the buffer and forecast match
-		result = FORECAST;
+		//result = FORECAST;
 		// Do the forecast function.
 	} else if (strcmp(buffer, "12hour") == 0 ) {
 		reading->hourtype = HALFDAY; // works
@@ -327,7 +326,7 @@ void debug_temphumid(void) {
 	u8g2_SendBuffer(&u8g2);
 }
 
-// INCOMPLETE
+// COMPLETE
 // Initialise the accelerometer
 void setup_accel (void) {
 	// Disable measurement register
@@ -772,23 +771,9 @@ void set_alarm (struct Reading reading) {
 	
 	// Set alarm minutes
 	alarmMinutes = ~(1<<7) & reading.alarmmin;
+	// BitMasked for 24 Hour Format
+	alarmHours = 0x3F & reading.alarmhour; 
 	
-
-	if (reading.hourtype) {
-		if (reading.alarmhour > 0x12) {
-			 reading.alarmhour -= 0x12;
-		}
-		// BitMasked to Include 12 hour bit
-		alarmHours = (reading.hourtype<<6) |(reading.alarmAmPm << 5)| reading.alarmhour;
-	} else {
-		// Commented out part which compensates AM/PM connotation
-		/*
-		if (reading.alarmhour < 0x12 && reading.alarmAmPm == PM) {
-			reading.alarmhour += 0x12;
-		}
-		*/
-		alarmHours = 0x3F & reading.alarmhour; // BitMasked for 24 Hour Format
-	}
 	
 	// Set Alarm Masks
 	// Alarm 0, triggers if hours match
@@ -801,9 +786,6 @@ void set_alarm (struct Reading reading) {
 	i2c_write(0x14);	// Function code 0x03
 	i2c_write(0x10);	// Alarm Mask for minutes
 	i2c_stop();
-		
-	
-
 
 	// Write the hours
 	i2c_start((CLOCK_ADDR<<1)+I2C_WRITE);// set device address and write mode
@@ -816,7 +798,6 @@ void set_alarm (struct Reading reading) {
 	i2c_write(0x12);	// Function code 0x03
 	i2c_write(alarmMinutes);	
 	i2c_stop();
-
 
 	// Set Control Registers
 	i2c_start((CLOCK_ADDR<<1)+I2C_WRITE);// set device address and write mode
@@ -839,14 +820,27 @@ void display_alarm_time(struct Reading *reading) {
 	uint8_t alarmHourCopy;
 	uint8_t mTen, mOne, hTen, hOne;
 	
+
+	
 	// If hourtype is half day but the format is full day (>12), it will fix it for it.
 	if (reading->hourtype == FULLDAY) {
-		alarmHourCopy = reading->alarmhour & 0x3F;
-	} else if (reading->hourtype == HALFDAY && reading->alarmhour > 0x12) {
+		if (reading->alarmhour == 0x24) {
+			alarmHourCopy = 0x12;
+		} else {
+			alarmHourCopy = reading->alarmhour & 0x3F;
+		}
+	} else if (reading->hourtype == HALFDAY && reading->alarmhour > 0x12) { // any clock value in pm
 		alarmHourCopy = reading->alarmhour - 0x12;
 		reading->alarmAmPm = PM;
+	} else if (reading->hourtype == HALFDAY && reading->alarmhour == 0x12){ // exception: 12PM
+		alarmHourCopy = reading->alarmhour;
+		reading->alarmAmPm = PM;
+	} else if (reading->hourtype == HALFDAY && reading->alarmhour == 0x00){ // exception: 12AM
+		alarmHourCopy = 0x12;
+		reading->alarmAmPm = AM;
 	} else {
 		alarmHourCopy = reading->alarmhour;
+		reading->alarmAmPm = AM;
 	}
 	
 	// Write the clock
@@ -890,10 +884,24 @@ void mode_A(struct Reading *reading) {
 	sOne = seconds- sTen*10;
 	mTen = minutes / 10;
 	mOne = minutes - mTen*10;
-	hTen = hours / 10;
-	hOne = hours - hTen*10;
-	
-
+	if (reading->hourtype == HALFDAY && hours > 12) { // PM Values
+		uint8_t hourdigits = hours - 12;
+		hTen = hourdigits / 10;
+		hOne = hourdigits - hTen*10;
+		reading->AmPm = PM;
+	} else if (reading->hourtype == HALFDAY && hours == 12) {// 12PM
+		hTen = 1;
+		hOne = 2;
+		reading->AmPm = PM;
+	}else if (reading->hourtype == HALFDAY && hours == 0) { // 12AM
+		hTen = 1;
+		hOne = 2;
+		reading->AmPm = AM;
+	} else { // AM Values
+		hTen = hours / 10;
+		hOne = hours - hTen*10;
+		reading->AmPm = AM;
+	}
 
 	// Handles leading 0 on hour
 	if (hTen) {
@@ -909,7 +917,7 @@ void mode_A(struct Reading *reading) {
 	u8g2_SetFontRefHeightText(&u8g2);
 	u8g2_SetFontPosTop(&u8g2);
 	if (reading->hourtype) {
-		if (read_AM_PM()) {
+		if (reading->AmPm) {
 			u8g2_DrawStr(&u8g2, 100, 30, "PM");
 		} else {
 			u8g2_DrawStr(&u8g2, 100, 30, "AM");
@@ -931,9 +939,9 @@ void mode_A(struct Reading *reading) {
 	u8g2_SetFont(&u8g2, u8g2_font_t0_22_tf   );
 	u8g2_SetFontRefHeightText(&u8g2);
 	u8g2_SetFontPosTop(&u8g2);
-	u8g2_DrawStr(&u8g2, 10, 30, buffer);
+	u8g2_DrawStr(&u8g2, 10, 30, buffer); // Write Clock String
 	
-	display_alarm_time(reading);
+	display_alarm_time(reading); // Write Alarm String
 
 	u8g2_SendBuffer(&u8g2);
 }
