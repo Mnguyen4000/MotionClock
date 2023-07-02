@@ -46,6 +46,10 @@ u8g2_t u8g2;
 	uint8_t seconds; // ONLY 24 HOUR
 	uint8_t minutes; // ONLY 24 HOUR
 	uint8_t hours; // ONLY 24 HOUR
+	uint8_t day; // 0x00 to 0x30/0x31
+	uint8_t month; // 0x00 to 0x12
+	uint8_t year; // Hexadecimal of the last 2 digits of the year 0x00 to 0x99
+	uint8_t weekday;
 	uint8_t hourtype;
 	uint8_t AmPm;
 	uint8_t alarmmin; // ONLY 24 HOUR
@@ -74,6 +78,7 @@ void transition_state(struct Reading *reading);
 void clear_alarm_flags(void);
 static uint8_t count = 0;
 void display_alarm_time(struct Reading *reading);
+void update_clock(struct Reading *reading);
 
 /*
 Notes:
@@ -104,8 +109,8 @@ int main (void)
 	reads.celsius = 1;
 	
 	reads.hours = 0x00;
-	reads.minutes = 0x59;
-	reads.seconds = 0x49;
+	reads.minutes = 0x00;
+	reads.seconds = 0x00;
 	reads.hourtype = FULLDAY;
 	reads.alarmhour = 0x23;
 	reads.alarmmin = 0x01;
@@ -185,7 +190,7 @@ void receive_data(struct Reading *reading) {
 		if (data == '\0') {
 			buffer[i] = '\0';
 			break;
-		} else {
+			} else {
 			buffer[i] = data;
 		}
 	}
@@ -198,9 +203,61 @@ void receive_data(struct Reading *reading) {
 		reading->hourtype = FULLDAY; // works
 	} else if (strcmp(buffer, "clock") == 0) {
 		// This gives the current clock information into the registers
+		update_clock(reading);
+		set_clock(reading);
 	}
 }
 
+void update_clock(struct Reading *reading) {
+	uint8_t count = 0, tens, ones;
+	uint16_t newvalue;
+	while (count < 7) {
+		char buffer[16];
+		char data;
+		for (int i = 0; i < 16; i++) {
+			data = uart_getc();
+			if (data == '\0') {
+				buffer[i] = '\0';
+				break;
+				} else {
+				buffer[i] = data;
+			}
+		}
+		if (count == 0) {
+			newvalue = atoi (buffer) - 2000;
+		} else {
+			newvalue = atoi (buffer);
+		}
+		tens = newvalue/10;
+		ones = newvalue - (tens * 10);
+		
+		switch (count) {
+			case 0: // Year
+				reading->year = (tens << 4) | ones;
+				break;
+			case 1: // Month
+				reading->month = (tens << 4) | ones;
+				break;						
+			case 2: // Day
+				reading->day = (tens << 4) | ones;
+				break;
+			case 3: // Hour
+				reading->hours = (tens << 4) | ones;
+				break;
+			case 4:
+				reading->minutes = (tens << 4) | ones;
+				break;	
+			case 5:
+				reading->seconds = (tens << 4) | ones;
+				break;	
+			case 6:
+				reading->weekday = (tens << 4) | ones;
+				break;
+		}
+		count++;
+
+	}
+}
 // COMPLETE
 // Reads the temperature and humidity
 // Returns the readings into the Reading Struct
@@ -585,7 +642,7 @@ void debug_accel(void) {
 	startClock: 0 -> Clock is OFF, 1 -> Clock is ON
 */
 void set_clock (struct Reading *reading) {
-	char setSeconds, setMinutes, setHours;
+	char setSeconds, setMinutes, setHours, setDay, setMonth, setYear, setWeekday;
 	
 	// Set the start bit for the clock + import seconds
 	setSeconds = (1<<7) | reading->seconds; 
@@ -593,6 +650,11 @@ void set_clock (struct Reading *reading) {
 	setMinutes = reading->minutes;
 	// BitMasked for 24 Hour Format
 	setHours = 0x3F & reading->hours; 
+	
+	setDay = reading->day;
+	setMonth = 0x2F & reading->month;
+	setYear = reading->year;
+	setWeekday = (1<<3) | reading->weekday;
 
 	
 	// Write the seconds
@@ -618,6 +680,26 @@ void set_clock (struct Reading *reading) {
 	i2c_write(setHours);	// Function code 0x03
 	i2c_stop();
 	
+	// Write the hours
+	i2c_start((CLOCK_ADDR<<1)+I2C_WRITE);// set device address and write mode
+	i2c_write(0x03);	// Function code 0x03
+	i2c_write(setWeekday);	// Function code 0x03
+	i2c_stop();
+	// Write the hours
+	i2c_start((CLOCK_ADDR<<1)+I2C_WRITE);// set device address and write mode
+	i2c_write(0x04);	// Function code 0x03
+	i2c_write(setDay);	// Function code 0x03
+	i2c_stop();
+	// Write the hours
+	i2c_start((CLOCK_ADDR<<1)+I2C_WRITE);// set device address and write mode
+	i2c_write(0x05);	// Function code 0x03
+	i2c_write(setMonth);	// Function code 0x03
+	i2c_stop();
+	// Write the hours
+	i2c_start((CLOCK_ADDR<<1)+I2C_WRITE);// set device address and write mode
+	i2c_write(0x06);	// Function code 0x03
+	i2c_write(setYear);	// Function code 0x03
+	i2c_stop();
 }
 
 // COMPLETE
@@ -868,7 +950,7 @@ void display_alarm_time(struct Reading *reading) {
 	u8g2_DrawStr(&u8g2, 0, 0, buffer);
 }
 void mode_A(struct Reading *reading) {
-	int sTen, sOne, mTen, mOne, hTen, hOne;
+	uint8_t sTen, sOne, mTen, mOne, hTen, hOne;
 	uint8_t seconds, minutes, hours;
 	char buffer[50];
 	
