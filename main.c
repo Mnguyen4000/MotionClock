@@ -30,9 +30,6 @@
 #define AM_OR_PM 3
 #define CELCIUS 4
 
-#define UART_TX_BUFFER_SIZE 32
-#define UART_RX_BUFFER_SIZE 32
-
 
 u8g2_t u8g2;
 
@@ -59,9 +56,18 @@ u8g2_t u8g2;
 	uint8_t alarmstate;
 };
 
+struct Forecast{ // numbers in decimal format
+	uint8_t year; // Last 2 digits: 2023 -> 23
+	uint8_t month; // Decimal format: 0 - 255
+	uint8_t day; // Decimal format: 0 - 255
+	float temperature;
+	float humidity;
+	char status[10];
+};
 
-void test(struct Reading *reading);
-void receive_data(struct Reading *reading);
+void sync_forecast(struct Forecast *forecast);
+void test(struct Forecast *forecast);
+void receive_data(struct Reading *reading, struct Forecast *forecast);
 void read_accel(struct Reading *reading);
 void debug_temphumid(void);
 void debug_accel(void);
@@ -79,6 +85,7 @@ void clear_alarm_flags(void);
 static uint8_t count = 0;
 void display_alarm_time(struct Reading *reading);
 void update_clock(struct Reading *reading);
+void mode_B(struct Reading *reading, struct Forecast *forecast);
 
 /*
 Notes:
@@ -90,6 +97,7 @@ when in 12 hour format, it is identified through software.
 int main (void)
 {
 	struct Reading reads;
+	struct Forecast fore[7];
 	u8g2_Setup_ssd1306_i2c_128x64_noname_f(&u8g2, U8G2_R0, u8x8_byte_avr_hw_i2c, u8x8_avr_delay);
 	u8g2_InitDisplay(&u8g2);
 	u8g2_SetPowerSave(&u8g2, 0);
@@ -124,16 +132,25 @@ int main (void)
 	char current_mode;
 	uart_init(UART_BAUD_SELECT(9600, F_CPU));
 	sei();
+	uint8_t fish = 0;
+	fore[0].day= 1;
+	char buffer[50];
+	uint8_t kill = 0;
+	char junk[30];
+	char greed[20] = "34.567";
 	while(1) {
 		read_accel(&reads);
 		read_clock(&reads);
 		current_mode = detect_mode(reads);
-
+		//uart_puts("next\n");
 		
 		if (current_mode != 'N') {
 			switch (current_mode) {
 				case 'A':
-					mode_A(&reads);
+					//mode_A(&reads);
+					//test(fore);
+					
+					//uart_puts("next\n");
 					break;
 				case 'B':
 					//Mode_B();
@@ -150,10 +167,52 @@ int main (void)
 		}
 		
 		// Receive messages from Seeduino Xiao and Process them
+		
 		if (uart_available()) {
-			receive_data(&reads);
+			receive_data(&reads, fore);
+			
+			
+			/*
+			
+			char buffer[16];
+			char data;
+			// Message Received
+			for (uint8_t k = 0; k < 16; k++) {
+				
+				data = uart_getc();
+				if (data == '\0') {
+					buffer[k] = '\0';
+					break;
+					} else {
+					buffer[k] = data;
+				}
+			}
+			
+			kill++;
+			
+			float sir = atof(greed);
+			int e1 = sir;
+			int e2 = ((float)sir - e1)*100;
+			int e3 = (sir - e1 - (float)e2/100) * 1000;
+			sprintf(junk, "T : %i.%i%i", e1, e2, e3);
+ 			//sprintf(junk, " T: %, %s ", kill, buffer);
+			 
+			sprintf(junk, "I:%s , %i", buffer, kill);
+			// Display data on OLED
+			u8g2_ClearBuffer(&u8g2);
+			u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
+			u8g2_SetFontRefHeightText(&u8g2);
+			u8g2_SetFontPosTop(&u8g2);
+			//u8g2_DrawStr(&u8g2, 0, 20,trash);// Low Humid
+			u8g2_DrawStr(&u8g2, 0, 30,junk);// Low Humid
+			u8g2_SendBuffer(&u8g2);	
+			_delay_ms(500);
+			*/
+			
+			
 		}
-		//test(&reads);
+		
+		// test(fore);
 		// Send messages to the Seeduino Xiao
 		// Send to the seeduino:
 		// Accelerometer Axis readings (X,Y,Z)
@@ -161,31 +220,77 @@ int main (void)
 		// reading->alarmhour, reading->alarmminute, and reading->alarmstate to let it know the alarm time and state (active or not)
 		// current forecast data (the current day?)
 		// the unit selection (fahrenheiht or celcius) (reading->celcius)
+		
 
-	
+		
+		
+		char buffer2[20];
+		char buffer3[20];
+		//fore[1].temperature = 52.21;
+		float sample;
+		char sign;
+		if (fore[6].temperature< 0) {
+			sign = '-';
+			sample = fore[6].temperature * -1;
+			} else {
+			sign = ' ';
+			sample = fore[6].temperature;
+		}
+		int e1 = sample;
+		int e2 = ((float)sample - e1)*100;
+		int e3 = (sample - e1 - (float)e2/100) * 1000;
+		sprintf(buffer, "T : %c%i.%i%i", sign, e1, e2, e3);
+		sprintf(buffer3, "tehe -> %s", fore[6].status);
+		sprintf(buffer2, "buff:%i", uart_available());
+		
+		
+
+		
+		// Display data on OLED
+		u8g2_ClearBuffer(&u8g2);
+		u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
+		u8g2_SetFontRefHeightText(&u8g2);
+		u8g2_SetFontPosTop(&u8g2);
+		u8g2_DrawStr(&u8g2, 0, 30, buffer);// Low Humid
+		
+		u8g2_DrawStr(&u8g2, 0, 40,buffer2);// Low Humid
+		u8g2_DrawStr(&u8g2, 0, 50,buffer3);// Low Humid
+		
+		//u8g2_DrawStr(&u8g2, 0, 50,buffer3);// Low Humid
+		u8g2_SendBuffer(&u8g2);
+		//uart_puts("next\n");	
+		//mode_B(&reads, fore);
+		//uart_puts("next\n");
+		
+		
+		
+		
+		if (fish > 20) {
+			PORTD |= (1<<6);
+		} else {
+			PORTD &= ~(1<<6);
+		}
+		fish++;
+		if (fish >= 40) {
+			fish = 0;
+		}
+		if (uart_available() >= 30) {
+			uart_puts("FULL\n");
+		}
+		//uart_puts("next\n");
 		_delay_ms(20);
 	}
 }
-void test(struct Reading *reading) {
-	char junk[30];
-	char str1[20];			
+void test(struct Forecast *forecast) {
+		
+	forecast[2].day = 0x02;
 	
-	sprintf(str1, "Received message");
-	sprintf(junk, "T:%i", reading->hourtype);
-	// Display data on OLED
-	u8g2_ClearBuffer(&u8g2);
-	u8g2_SetFont(&u8g2, u8g2_font_unifont_t_symbols);
-	u8g2_SetFontRefHeightText(&u8g2);
-	u8g2_SetFontPosTop(&u8g2);
-	u8g2_DrawStr(&u8g2, 0, 20,str1);// Low Humid
-	u8g2_DrawStr(&u8g2, 0, 30,junk);// Low Humid
-	u8g2_SendBuffer(&u8g2);
 }
 
-void receive_data(struct Reading *reading) {
+void receive_data(struct Reading *reading, struct Forecast *forecast) {
 	char buffer[16];
 	char data;
-	for (int i = 0; i < 16; i++) {
+	for (uint8_t i = 0; i < 16; i++) {
 		data = uart_getc();
 		if (data == '\0') {
 			buffer[i] = '\0';
@@ -194,9 +299,12 @@ void receive_data(struct Reading *reading) {
 			buffer[i] = data;
 		}
 	}
-	if (strcmp(buffer, "forecast") == 0 ) { // If the buffer and forecast match
+	
+	if (strcmp(buffer, "f") == 0 ) { // If the buffer and forecast match
 		//result = FORECAST;
 		// Do the forecast function.
+		sync_forecast(forecast);
+		//test(forecast);
 	} else if (strcmp(buffer, "12hour") == 0 ) {
 		reading->hourtype = HALFDAY; // works
 	} else if (strcmp(buffer, "24hour") == 0 ) {
@@ -205,7 +313,63 @@ void receive_data(struct Reading *reading) {
 		// This gives the current clock information into the registers
 		update_clock(reading);
 		set_clock(reading);
+	}else if (strcmp(buffer, "test") == 0)  {
+		test(forecast);
 	}
+}
+
+void sync_forecast(struct Forecast *forecast) {
+	//uart_flush();
+	
+	for (uint8_t i = 0; i < 7; i++) { // 7 Days
+			
+		for (uint8_t j = 0; j < 6; j++) { // The days data
+			char buffer[16];
+			char data;
+			// Message Received
+			for (uint8_t k = 0; k < 16; k++) {
+				data = uart_getc();
+				if (data == '\0') {
+					buffer[k] = '\0';
+					break;
+					} else {
+					buffer[k] = data;
+				}	
+			}
+			
+			switch (j) {
+				case 0: // Year
+					forecast[i].year = atoi(buffer) - 2000;			
+					break;
+				case 1: // Month
+					forecast[i].month = atoi(buffer);		
+					break;
+				case 2: // Day
+					forecast[i].day = atoi(buffer);
+					break;
+				
+				case 3: // Temperature (float)
+					forecast[i].temperature = atof(buffer);
+					break;
+				case 4: // Humidity (float)
+					forecast[i].humidity = atof(buffer);
+					break;
+				case 5:
+					memcpy(forecast[i].status, buffer, 10);
+					PORTD |= (1<<7);
+					break;
+			}
+			//forecast[i].day = j;
+			
+			//uart_puts("next\n");
+			//_delay_ms(1000);
+			//forecast[2].day = 0x03;
+			_delay_ms(575);
+		}
+		//forecast[2].day = atoi("32");
+	}
+	//forecast[2].day = 0x02;
+	
 }
 
 void update_clock(struct Reading *reading) {
@@ -1028,9 +1192,38 @@ void mode_A(struct Reading *reading) {
 	u8g2_SendBuffer(&u8g2);
 }
 
-void mode_B(void) {
+void mode_B(struct Reading *reading, struct Forecast *forecast) {
 	// Mode B is the same fahreinheight/Celsius as Mode C
-	
+	char temperature[20];
+	char sign;
+	uint8_t current, decimalDay;
+	for (uint8_t i = 0; i < 7; i++) {
+		decimalDay = ((reading->day >> 4) * 10) + (reading->day & 0x0F);
+		if (forecast[i].day == decimalDay) {
+			current = i;
+			break;
+		} else {
+			current = 0;
+		}
+	}
+	if (forecast[current].temperature < 0) {
+		sign = '-';
+	} else {
+		sign = ' ';
+	}
+	int e1 = forecast[current].temperature;
+	int e2 = ((float)forecast[current].temperature - e1)*100;
+	int e3 = (forecast[current].temperature - e1 - (float)e2/100) * 1000;
+	sprintf(temperature, "T : %c%i.%i%i", sign, e1, e2, e3);
+		
+			
+	// Display data on OLED
+	u8g2_ClearBuffer(&u8g2);
+	u8g2_SetFont(&u8g2, u8g2_font_unifont_t_symbols);
+	u8g2_SetFontRefHeightText(&u8g2);
+	u8g2_SetFontPosTop(&u8g2);
+	u8g2_DrawStr(&u8g2, 0, 30, temperature );// Low Humid
+	u8g2_SendBuffer(&u8g2);
 }
 
 void mode_C(struct Reading reading) {
