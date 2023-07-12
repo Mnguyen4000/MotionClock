@@ -1,5 +1,5 @@
 #include <avr/io.h>
-#define F_CPU 16000000UL
+#define F_CPU 8000000UL
 #include <util/delay.h>
 #include <u8g2.h>
 #include <u8x8_avr.h>
@@ -30,11 +30,19 @@
 #define AM_OR_PM 3
 #define CELCIUS 4
 
+#define MON 0
+#define TUE 1
+#define WED 2
+#define THU	3
+#define FRI 4
+#define SAT 5
+#define SUN 6
+
 
 u8g2_t u8g2;
 
  struct Reading{
-	uint8_t celsius;
+	uint8_t celsius; // 0 -> fahrenheit, 1-> celcius
 	uint8_t temperature;
 	uint8_t humidity;
 	short xAxis;
@@ -46,14 +54,14 @@ u8g2_t u8g2;
 	uint8_t day; // 0x00 to 0x30/0x31
 	uint8_t month; // 0x00 to 0x12
 	uint8_t year; // Hexadecimal of the last 2 digits of the year 0x00 to 0x99
-	uint8_t weekday;
+	uint8_t weekday; // MON -> 0, SUN -> 6
 	uint8_t hourtype;
 	uint8_t AmPm;
 	uint8_t alarmmin; // ONLY 24 HOUR
 	uint8_t alarmhour; // ONLY 24 HOUR
 	uint8_t alarmAmPm; // ONLY 24 HOUR
-	uint8_t alarmMask; // ONLY 24 HOUR
 	uint8_t alarmstate;
+	uint8_t lowpower;
 };
 
 struct Forecast{ // numbers in decimal format
@@ -86,7 +94,8 @@ static uint8_t count = 0;
 void display_alarm_time(struct Reading *reading);
 void update_clock(struct Reading *reading);
 void mode_B(struct Reading *reading, struct Forecast *forecast);
-
+void mode_D(struct Reading *reading);
+void send_info(struct Reading *reading, struct Forecast *forecast);
 /*
 Notes:
 The clock values are always in 24 hour format, the 12 hour format in the IC is not used
@@ -102,12 +111,16 @@ int main (void)
 	u8g2_InitDisplay(&u8g2);
 	u8g2_SetPowerSave(&u8g2, 0);
 	
+	
 	u8g2_ClearBuffer(&u8g2);
 	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf );
+	u8g2_SetFontMode(&u8g2, 1);
+	u8g2_SetDrawColor(&u8g2, 0);
 	u8g2_SetFontRefHeightText(&u8g2);
 	u8g2_SetFontPosTop(&u8g2);
-	u8g2_DrawStr(&u8g2, 0, 20, "Initial Screen XD");
+	u8g2_DrawStr(&u8g2, 0, 20, "Initial Screen L");
 	u8g2_SendBuffer(&u8g2);
+	
 	
 	// Initialising Default
 	reads.xAxis = 99;
@@ -115,175 +128,151 @@ int main (void)
 	reads.zAxis = 99;
 	
 	reads.celsius = 1;
+	reads.temperature = 0;
+	reads.humidity = 0;
 	
 	reads.hours = 0x00;
 	reads.minutes = 0x00;
 	reads.seconds = 0x00;
+	reads.weekday = SAT;
 	reads.hourtype = FULLDAY;
 	reads.alarmhour = 0x23;
 	reads.alarmmin = 0x01;
 	reads.alarmstate = DEACTIVATED;
+	
+	reads.lowpower = 0;
+	
 	set_clock(&reads);
 	set_alarm(reads);
-	
 	setup_accel();
+	
 	DDRD = 0xFF;
 	DDRB |= (1<<0);
 	char current_mode;
+	
 	uart_init(UART_BAUD_SELECT(9600, F_CPU));
+	
 	sei();
-	uint8_t fish = 0;
-	fore[0].day= 1;
-	char buffer[50];
-	uint8_t kill = 0;
-	char junk[30];
-	char greed[20] = "34.567";
+	
+	for(uint8_t a = 0; a < 7; a++){
+		fore[a].day = 0;
+		fore[a].month = 0;
+		fore[a].year = 0;
+		fore[a].temperature = 0;
+		fore[a].humidity = 0;
+		memcpy(fore[a].status, "error", 6);
+	}
+	uint8_t ct = 0;
+
 	while(1) {
+		
+		if (reads.lowpower == 2) {
+			u8g2_SetPowerSave(&u8g2, 0);
+			i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
+			i2c_write(0x2C);	// Function code 0x03
+			i2c_write((1<<3));	// Sets speed for lowpower mode
+			i2c_stop();
+			reads.lowpower = 0;
+		}
+		if (reads.lowpower == 0) {
+			read_clock(&reads);
+			read_temp_and_humidity(&reads);
+		}
+		
 		read_accel(&reads);
-		read_clock(&reads);
 		current_mode = detect_mode(reads);
-		//uart_puts("next\n");
+		//mode_C(reads);
 		
 		if (current_mode != 'N') {
 			switch (current_mode) {
 				case 'A':
-					//mode_A(&reads);
-					//test(fore);
-					
-					//uart_puts("next\n");
+					mode_A(&reads);
 					break;
 				case 'B':
-					//Mode_B();
+					mode_B(&reads, fore);
 					break;
 				case 'C':
 					mode_C(reads);
 					break;
 				case 'D':
-					//mode_D();
+					reads.lowpower = 1;
+					mode_D(&reads);
 					break;
-				default:
-					debug_temphumid();
 			}
+		} else {
+			mode_A(&reads);
 		}
 		
 		// Receive messages from Seeduino Xiao and Process them
 		
 		if (uart_available()) {
 			receive_data(&reads, fore);
-			
-			
-			/*
-			
-			char buffer[16];
-			char data;
-			// Message Received
-			for (uint8_t k = 0; k < 16; k++) {
-				
-				data = uart_getc();
-				if (data == '\0') {
-					buffer[k] = '\0';
-					break;
-					} else {
-					buffer[k] = data;
-				}
-			}
-			
-			kill++;
-			
-			float sir = atof(greed);
-			int e1 = sir;
-			int e2 = ((float)sir - e1)*100;
-			int e3 = (sir - e1 - (float)e2/100) * 1000;
-			sprintf(junk, "T : %i.%i%i", e1, e2, e3);
- 			//sprintf(junk, " T: %, %s ", kill, buffer);
-			 
-			sprintf(junk, "I:%s , %i", buffer, kill);
-			// Display data on OLED
-			u8g2_ClearBuffer(&u8g2);
-			u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
-			u8g2_SetFontRefHeightText(&u8g2);
-			u8g2_SetFontPosTop(&u8g2);
-			//u8g2_DrawStr(&u8g2, 0, 20,trash);// Low Humid
-			u8g2_DrawStr(&u8g2, 0, 30,junk);// Low Humid
-			u8g2_SendBuffer(&u8g2);	
-			_delay_ms(500);
-			*/
-			
-			
 		}
 		
-		// test(fore);
-		// Send messages to the Seeduino Xiao
-		// Send to the seeduino:
-		// Accelerometer Axis readings (X,Y,Z)
-		// reading->hourType to let it know if its in 12 hour to 24 hour mode
-		// reading->alarmhour, reading->alarmminute, and reading->alarmstate to let it know the alarm time and state (active or not)
-		// current forecast data (the current day?)
-		// the unit selection (fahrenheiht or celcius) (reading->celcius)
-		
-
-		
-		
-		char buffer2[20];
-		char buffer3[20];
-		//fore[1].temperature = 52.21;
-		float sample;
-		char sign;
-		if (fore[6].temperature< 0) {
-			sign = '-';
-			sample = fore[6].temperature * -1;
-			} else {
-			sign = ' ';
-			sample = fore[6].temperature;
-		}
-		int e1 = sample;
-		int e2 = ((float)sample - e1)*100;
-		int e3 = (sample - e1 - (float)e2/100) * 1000;
-		sprintf(buffer, "T : %c%i.%i%i", sign, e1, e2, e3);
-		sprintf(buffer3, "tehe -> %s", fore[6].status);
-		sprintf(buffer2, "buff:%i", uart_available());
-		
-		
-
-		
-		// Display data on OLED
-		u8g2_ClearBuffer(&u8g2);
-		u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
-		u8g2_SetFontRefHeightText(&u8g2);
-		u8g2_SetFontPosTop(&u8g2);
-		u8g2_DrawStr(&u8g2, 0, 30, buffer);// Low Humid
-		
-		u8g2_DrawStr(&u8g2, 0, 40,buffer2);// Low Humid
-		u8g2_DrawStr(&u8g2, 0, 50,buffer3);// Low Humid
-		
-		//u8g2_DrawStr(&u8g2, 0, 50,buffer3);// Low Humid
-		u8g2_SendBuffer(&u8g2);
-		//uart_puts("next\n");	
-		//mode_B(&reads, fore);
-		//uart_puts("next\n");
-		
-		
-		
-		
-		if (fish > 20) {
-			PORTD |= (1<<6);
+		if (ct >=10) {
+			send_info(&reads, fore);
+			ct = 0;
 		} else {
-			PORTD &= ~(1<<6);
+			ct++;
 		}
-		fish++;
-		if (fish >= 40) {
-			fish = 0;
-		}
-		if (uart_available() >= 30) {
-			uart_puts("FULL\n");
-		}
-		//uart_puts("next\n");
-		_delay_ms(20);
+
+		_delay_ms(100);
 	}
 }
 void test(struct Forecast *forecast) {
 		
-	forecast[2].day = 0x02;
+	
+}
+
+void send_info(struct Reading *reading, struct Forecast *forecast) {
+	
+	char stats[50];
+	uint8_t current, decimalDay, t1, t2, t3, t4, t5, t6;
+	
+	// Accelerometer Readings and onboard Temp/Humid
+	sprintf(stats, "X:%hi Y:%hi Z:%hi, T:%i, H:%i\n", reading->xAxis, reading->yAxis, reading->zAxis, reading->temperature, reading->humidity);
+	uart_puts(stats);
+	
+	// Current Time, Weekday and Hour Type
+	sprintf(stats, "h:%i m:%i s:%i, w:%i, h:%i\n", reading->hours, reading->minutes, reading->seconds, reading->weekday, reading->hourtype);
+	uart_puts(stats);
+	// Current Alarm Hour, Min, State
+	sprintf(stats, "H:%i M:%i S:%i\n", reading->alarmhour, reading->alarmmin, reading->alarmstate);
+	uart_puts(stats);
+	
+		
+	for (uint8_t i = 0; i < 7; i++) {
+		// If the day-date matches to current day, gather that information
+		decimalDay = ((reading->day >> 4) * 10) + (reading->day & 0x0F);
+		if (forecast[i].day == decimalDay) {
+			current = i;
+			break;
+			} else {
+			current = 2;
+		}
+	}
+	
+	char sign;
+	float tempReading = forecast[current].temperature;
+
+	if (tempReading < 0) {
+		sign = '-';
+		tempReading = tempReading * -1;
+		} else {
+		sign = ' ';
+	}
+
+	t1 = tempReading;
+	t2 = (tempReading - t1)*100;
+	t3 = (tempReading - t1 - t2/100) * 1000;
+
+	tempReading = forecast[current].humidity;
+	t4 = tempReading;
+	t5 = (tempReading - t4)*100;
+	t6 = (tempReading - t4 - t5/100) * 1000;
+	
+	sprintf(stats, "T:%c%i.%i%i H:%i.%i%i s: %s\n", sign, t1, t2, t3, t4, t5, t6, forecast[current].status);
+	uart_puts(stats);
 	
 }
 
@@ -301,10 +290,7 @@ void receive_data(struct Reading *reading, struct Forecast *forecast) {
 	}
 	
 	if (strcmp(buffer, "f") == 0 ) { // If the buffer and forecast match
-		//result = FORECAST;
-		// Do the forecast function.
 		sync_forecast(forecast);
-		//test(forecast);
 	} else if (strcmp(buffer, "12hour") == 0 ) {
 		reading->hourtype = HALFDAY; // works
 	} else if (strcmp(buffer, "24hour") == 0 ) {
@@ -315,12 +301,14 @@ void receive_data(struct Reading *reading, struct Forecast *forecast) {
 		set_clock(reading);
 	}else if (strcmp(buffer, "test") == 0)  {
 		test(forecast);
+	} else if (strcmp(buffer, "C") == 0) {
+		reading->celsius = 1;
+	} else if (strcmp(buffer, "F") == 0) {
+		reading->celsius = 0;
 	}
 }
 
-void sync_forecast(struct Forecast *forecast) {
-	//uart_flush();
-	
+void sync_forecast(struct Forecast *forecast) {	
 	for (uint8_t i = 0; i < 7; i++) { // 7 Days
 			
 		for (uint8_t j = 0; j < 6; j++) { // The days data
@@ -359,17 +347,9 @@ void sync_forecast(struct Forecast *forecast) {
 					PORTD |= (1<<7);
 					break;
 			}
-			//forecast[i].day = j;
-			
-			//uart_puts("next\n");
-			//_delay_ms(1000);
-			//forecast[2].day = 0x03;
 			_delay_ms(575);
 		}
-		//forecast[2].day = atoi("32");
 	}
-	//forecast[2].day = 0x02;
-	
 }
 
 void update_clock(struct Reading *reading) {
@@ -378,7 +358,7 @@ void update_clock(struct Reading *reading) {
 	while (count < 7) {
 		char buffer[16];
 		char data;
-		for (int i = 0; i < 16; i++) {
+		for (uint8_t i = 0; i < 16; i++) {
 			data = uart_getc();
 			if (data == '\0') {
 				buffer[i] = '\0';
@@ -415,7 +395,7 @@ void update_clock(struct Reading *reading) {
 				reading->seconds = (tens << 4) | ones;
 				break;	
 			case 6:
-				reading->weekday = (tens << 4) | ones;
+				reading->weekday = ones;
 				break;
 		}
 		count++;
@@ -440,10 +420,6 @@ void read_temp_and_humidity(struct Reading *reading) {
 	
 	// Once awaken, send read commands
 	if (i2c_start((TEMPHUMID_ADDR<<1)+I2C_WRITE)) { // set device address and write mode
-		PORTD &= ~(1<<7); // Slave did not respond
-		} else {
-		PORTD |= (1<<7); // Slave found
-		
 		i2c_write(0x03);	// Function code 0x03
 		i2c_write(0x00);	// Set Starting Register Address to 0x00
 		i2c_write(0x04);	// Number of Registers to read
@@ -463,10 +439,10 @@ void read_temp_and_humidity(struct Reading *reading) {
 		i2c_stop();
 			
 		//Calculates actual temperature and humidity from readings
-		int temperatureCalc = (highTemp * 256) + ((lowTemp >> 4)* 16) + (lowTemp & 0x0F);
-		int temperature = temperatureCalc/10;
-		int humidityCalc = (highHumid * 256) + ((lowHumid >> 4)* 16) + (lowHumid & 0x0F);
-		int humidity = humidityCalc/10;
+		short temperatureCalc = (highTemp * 256) + ((lowTemp >> 4)* 16) + (lowTemp & 0x0F);
+		short temperature = temperatureCalc/10;
+		short humidityCalc = (highHumid * 256) + ((lowHumid >> 4)* 16) + (lowHumid & 0x0F);
+		short humidity = humidityCalc/10;
 			
 		// Update readings into struct
 		reading->humidity = humidity;
@@ -474,78 +450,6 @@ void read_temp_and_humidity(struct Reading *reading) {
 	}     
 }
 
-// COMPLETE
-// Displays the statistics for the temperature and humidity module on the OLED Display
-void debug_temphumid(void) {
-	unsigned char lowTemp, highTemp, lowHumid, highHumid;
-	// Reading
-	
-	// To use the humidity sensor, you must awaken it, then it allows the acquisition of temp and humidity sensors
-	// the entire process must happen within 3 seconds, due to it becoming inactive and must be awaken once more to start again
-	// you can only acquire the information every 2 seconds!!!
-
-	// Wake up the device
-	i2c_start((TEMPHUMID_ADDR<<1) + I2C_WRITE);
-	_delay_ms(1);
-	i2c_stop();
-	
-	// Once awaken, send read commands
-	if (i2c_start((TEMPHUMID_ADDR<<1)+I2C_WRITE)){
-		PORTD &= ~(1<<7);
-		} else {
-		PORTD |= (1<<7);
-	}     // set device address and write mode
-	
-	i2c_write(0x03);	// Function code 0x03
-	i2c_write(0x00);	// Set Starting Register Address to 0x00
-	i2c_write(0x04);	// Number of Registers to read
-	i2c_stop();
-	_delay_ms(2);
-	i2c_rep_start((TEMPHUMID_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode		
-	i2c_readAck();									// Byte one:	Function Code (0x03)
-	i2c_readAck();									// Byte Two:	Data Length (0x04)
-	highHumid = i2c_readAck();						// Byte Three:	High Humidity reading
-	lowHumid = i2c_readAck();						// Byte Four:	Low Humidity reading
-	highTemp = i2c_readAck();						// Byte Five:	High Temperature reading
-	lowTemp = i2c_readAck();						// Byte Six:	Low Temperature reading
-	i2c_readAck();									// Byte Seven: CRC Most Significant Byte 
-	i2c_readNak();									// Byte Eight: CRC Least Significant Byte
-	
-	_delay_ms(1);
-	i2c_stop();
-	
-	
-	//Calculates actual temperature and humidity from readings
-	int temperatureCalc = (highTemp * 256) + ((lowTemp >> 4)* 16) + (lowTemp & 0x0F);
-	int temperature = temperatureCalc/10;
-	int humidityCalc = (highHumid * 256) + ((lowHumid >> 4)* 16) + (lowHumid & 0x0F);
-	int humidity = humidityCalc/10;
-			
-	// Create buffers to place integer to strings
-	char str1[30];
-	char str2[30];
-	char str3[30];
-	char str4[30];
-	char str5[30];
-
-	sprintf(str1, "lowHumid:\t %i", lowHumid);
-	sprintf(str2, "highHumid:\t%i", highHumid);
-	sprintf(str3, "lowTemp:\t %i", lowTemp);
-	sprintf(str4, "highTemp:\t %i", highTemp);
-	sprintf(str5, "T: %i, H: %i", temperature, humidity);
-			
-	// Display data on OLED
-	u8g2_ClearBuffer(&u8g2);
-	u8g2_SetFont(&u8g2, u8g2_font_smart_patrol_nbp_tr);
-	u8g2_SetFontRefHeightText(&u8g2);
-	u8g2_SetFontPosTop(&u8g2);
-	u8g2_DrawStr(&u8g2, 0, 10,str1); // Low Humid
-	u8g2_DrawStr(&u8g2, 0, 20,str2); // High Humid
-	u8g2_DrawStr(&u8g2, 0, 30,str3); // Low Temperature
-	u8g2_DrawStr(&u8g2, 0, 40,str4); // High Temperature
-	u8g2_DrawStr(&u8g2, 0, 50,str5); // Temperature and Humidity
-	u8g2_SendBuffer(&u8g2);
-}
 
 // COMPLETE
 // Initialise the accelerometer
@@ -598,6 +502,11 @@ void setup_accel (void) {
 	i2c_write(1<<5);	// Pins -> int1: Single Tap and int2: Double Tap Enabled
 	i2c_stop();
 	
+	i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
+	i2c_write(0x2C);	// Function code 0x03
+	i2c_write((1<<3));	// Sets speed for lowpower mode
+	i2c_stop();
+	
 	i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);
 	i2c_write(0x2D);	// Function code 0x03
 	i2c_write((1<<3));	// Enable Measurement
@@ -611,23 +520,13 @@ void read_accel(struct Reading *reading) {
 	char xAxisMSB, xAxisLSB, yAxisMSB, yAxisLSB, zAxisMSB, zAxisLSB;
 	
 	// Enable Measurement bit
-	if (i2c_start((ACCEL_ADDR<<1)+I2C_WRITE)){// set device address and write mode
-		PORTB &= ~(1<<0);
-		} else {
-		PORTB |= (1<<0);
-	}
-		
+	(i2c_start((ACCEL_ADDR<<1)+I2C_WRITE));// set device address and write mode		
 	i2c_write(0x2D);	// Function code 0x03
 	i2c_write(0b00001000);	// Function code 0x03
 	i2c_stop();
 	
 	// Write Data Format
-	if (i2c_start((ACCEL_ADDR<<1)+I2C_WRITE)){// set device address and write mode
-		PORTB &= ~(1<<0);
-	} else {
-		PORTB |= (1<<0);	
-	}     
-	
+	(i2c_start((ACCEL_ADDR<<1)+I2C_WRITE));// set device address and write mode	
 	i2c_write(0x31);	// Function code 0x03
 	i2c_write(0b00001011); // Enable 16g
 	i2c_stop();
@@ -691,113 +590,6 @@ void read_accel(struct Reading *reading) {
 	reading->zAxis = zAxis;
 }
 
-// COMPLETE
-// Displays the X, Y, Z Axis on th OLED
-void debug_accel(void) {
-	short xAxis, yAxis, zAxis;
-	char xAxisMSB, xAxisLSB, yAxisMSB, yAxisLSB, zAxisMSB, zAxisLSB;
-	
-	//bypass fifo
-	if (i2c_start((ACCEL_ADDR<<1)+I2C_WRITE)){// set device address and write mode
-		PORTB &= ~(1<<0);
-		} else {
-		PORTB |= (1<<0);
-	}
-	
-	i2c_write(0x38);	// Function code 0x03
-	i2c_write(0x00);	// Function code 0x03
-	i2c_stop();
-	
-	
-	if (i2c_start((ACCEL_ADDR<<1)+I2C_WRITE)){// set device address and write mode
-		PORTB &= ~(1<<0);
-		} else {
-		PORTB |= (1<<0);
-	}
-	
-	i2c_write(0x2D);	// Function code 0x03
-	i2c_write(0b00001000);	// Function code 0x03
-	i2c_stop();
-	
-	if (i2c_start((ACCEL_ADDR<<1)+I2C_WRITE)){// set device address and write mode
-		PORTB &= ~(1<<0);
-		} else {
-		PORTB |= (1<<0);
-	}
-	
-	i2c_write(0x31);	// Function code 0x03
-	i2c_write(0b00001010);
-	i2c_stop();
-
-
-	// X Axis LSB
-	i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
-	i2c_write(0x32);	// Function code 0x03
-	i2c_stop();
-	i2c_rep_start((ACCEL_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-	xAxisLSB = i2c_readNak();									// Byte one:
-	i2c_stop();
-	// X Axis MSB
-	i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
-	i2c_write(0x33);	// Function code 0x03
-	i2c_stop();
-	i2c_rep_start((ACCEL_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-	xAxisMSB = i2c_readNak();									// Byte one:
-	i2c_stop();
-	
-	// Y Axis LSB
-	i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
-	i2c_write(0x34);	// Function code 0x03
-	i2c_stop();
-	i2c_rep_start((ACCEL_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-	//i2c_readAck();
-	yAxisLSB = i2c_readNak();									// Byte one:
-	i2c_stop();
-	// Y Axis MSB
-	i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
-	i2c_write(0x35);	// Function code 0x03
-	i2c_stop();
-	i2c_rep_start((ACCEL_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-	//i2c_readAck();
-	yAxisMSB = i2c_readNak();									// Byte one:
-	i2c_stop();
-	
-	// Z Axis LSB
-	i2c_start((ACCEL_ADDR<<1)+I2C_WRITE); // set device address and write mode
-	i2c_write(0x36);	// Function code 0x03
-	i2c_stop();
-	i2c_rep_start((ACCEL_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-	//i2c_readAck();
-	zAxisLSB = i2c_readNak();									// Byte one:
-	i2c_stop();
-	// Z Axis LSB
-	i2c_start((ACCEL_ADDR<<1)+I2C_WRITE); // set device address and write mode
-	i2c_write(0x37);	// Function code 0x03
-	i2c_stop();
-	i2c_rep_start((ACCEL_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-	//i2c_readAck();
-	zAxisMSB = i2c_readNak();									// Byte one:
-	i2c_stop();
-	
-	xAxis = (xAxisMSB << 8) | xAxisLSB;
-	yAxis = (yAxisMSB << 8) | yAxisLSB;
-	zAxis = (zAxisMSB << 8) | zAxisLSB;
-	
-	char str1[20];
-	char str2[20];
-	char str3[20];
-	sprintf(str1, "x: %i", xAxis);
-	sprintf(str2, "y: %i", yAxis);
-	sprintf(str3, "z: %i", zAxis);
-	u8g2_ClearBuffer(&u8g2);
-	u8g2_SetFont(&u8g2, u8g2_font_smart_patrol_nbp_tr);
-	u8g2_SetFontRefHeightText(&u8g2);
-	u8g2_SetFontPosTop(&u8g2);
-	u8g2_DrawStr(&u8g2, 0, 10, str1);
-	u8g2_DrawStr(&u8g2, 0, 20, str2);
-	u8g2_DrawStr(&u8g2, 0, 30, str3);
-	u8g2_SendBuffer(&u8g2);
-}
 
 // COMPLETE
 /*
@@ -822,12 +614,7 @@ void set_clock (struct Reading *reading) {
 
 	
 	// Write the seconds
-	if (i2c_start((CLOCK_ADDR<<1)+I2C_WRITE)){// set device address and write mode
-		PORTB &= ~(1<<0);
-		} else {
-		PORTB |= (1<<0);
-	}
-		
+	(i2c_start((CLOCK_ADDR<<1)+I2C_WRITE));// set device address and write mode		
 	i2c_write(0x00);	// Function code: seconds
 	i2c_write(setSeconds);	// Function code 
 	i2c_stop();
@@ -931,53 +718,6 @@ void transition_state(struct Reading *reading) {
 	i2c_stop();
 }
 
-void debug_clock(void) {
-	// Read the seconds
-	uint8_t readSeconds, readMinutes, readHours, seconds, minutes, hours;
-	i2c_start((CLOCK_ADDR<<1)+I2C_WRITE);// set device address and write mode
-	i2c_write(0x00);	// Function code 0x00
-	i2c_stop();
-	i2c_rep_start((CLOCK_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-	readSeconds = ~(1<<7) & i2c_readNak();									// Byte one:
-	i2c_stop();
-	
-	// Read the minutes
-	i2c_start((CLOCK_ADDR<<1)+I2C_WRITE);// set device address and write mode
-	i2c_write(0x01);	// Function code 0x01
-	i2c_stop();
-	i2c_rep_start((CLOCK_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-	readMinutes = i2c_readNak();									// Byte one:
-	i2c_stop();
-	
-	// Read the hours
-	i2c_start((CLOCK_ADDR<<1)+I2C_WRITE);// set device address and write mode
-	i2c_write(0x02);	// Function code 0x02
-	i2c_stop();
-	i2c_rep_start((CLOCK_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-	readHours = i2c_readNak();
-	i2c_stop();
-	
-	seconds = (readSeconds>>4) * 10 + (readSeconds & 0x0F);
-	minutes = (readMinutes>>4) * 10 + (readMinutes & 0x0F);
-	hours = (readHours>>4) * 10 + (readHours & 0x0F);
-		
-	char buff1[20];
-	char buff2[20];
-	char buff3[20];
-	sprintf(buff1, "seconds: %i", seconds);
-	sprintf(buff2, "minutes: %i", minutes);
-	sprintf(buff3, "hours: %i", hours);
-			
-	u8g2_ClearBuffer(&u8g2);
-	u8g2_SetFont(&u8g2, u8g2_font_smart_patrol_nbp_tr);
-	u8g2_SetFontRefHeightText(&u8g2);
-	u8g2_SetFontPosTop(&u8g2);
-	u8g2_DrawStr(&u8g2, 0, 10, buff1);
-	u8g2_DrawStr(&u8g2, 0, 20, buff2);
-	u8g2_DrawStr(&u8g2, 0, 30, buff3);
-	u8g2_SendBuffer(&u8g2);
-}
-
 //COMPLETE
 // Returns 'A', 'B', 'C', 'D', or 'N' Depending on what mode its in
 char detect_mode(struct Reading reading) {
@@ -1020,7 +760,6 @@ void set_alarm (struct Reading reading) {
 	// BitMasked for 24 Hour Format
 	alarmHours = 0x3F & reading.alarmhour; 
 	
-	
 	// Set Alarm Masks
 	// Alarm 0, triggers if hours match
 	i2c_start((CLOCK_ADDR<<1)+I2C_WRITE);// set device address and write mode
@@ -1054,6 +793,7 @@ void set_alarm (struct Reading reading) {
 }
 
 void alarm_active(void) {
+	// Toggles PORTD6 GPIO
 	count += 1; // count goes up every 20ms
 	if (count <= 14) { // 700ms
 		PORTD |= (1<<6);
@@ -1102,8 +842,6 @@ void display_alarm_time(struct Reading *reading) {
 		sprintf(buffer,"Alarm: %i:%i%i:00", hOne, mTen, mOne);
 	}
 	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf );
-	u8g2_SetFontRefHeightText(&u8g2);
-	u8g2_SetFontPosTop(&u8g2);
 	if (reading->hourtype) {
 		if (reading->alarmAmPm) { //0 -> AM, 1-> PM
 			u8g2_DrawStr(&u8g2, 85, 0, "PM");
@@ -1113,15 +851,17 @@ void display_alarm_time(struct Reading *reading) {
 	}
 	u8g2_DrawStr(&u8g2, 0, 0, buffer);
 }
+
 void mode_A(struct Reading *reading) {
 	uint8_t sTen, sOne, mTen, mOne, hTen, hOne;
 	uint8_t seconds, minutes, hours;
-	char buffer[50];
+	char clockReading[15];
 	
 	// Reset counter if it gets too high
 	if (count >= 20) {
 		count = 0;
 	}
+	
 	seconds = (reading->seconds>>4) * 10 + (reading->seconds & 0x0F);
 	minutes = (reading->minutes>>4) * 10 + (reading->minutes & 0x0F);
 	hours = (reading->hours>>4) * 10 + (reading->hours & 0x0F);
@@ -1130,6 +870,7 @@ void mode_A(struct Reading *reading) {
 	sOne = seconds- sTen*10;
 	mTen = minutes / 10;
 	mOne = minutes - mTen*10;
+	
 	if (reading->hourtype == HALFDAY && hours > 12) { // PM Values
 		uint8_t hourdigits = hours - 12;
 		hTen = hourdigits / 10;
@@ -1148,56 +889,59 @@ void mode_A(struct Reading *reading) {
 		hOne = hours - hTen*10;
 		reading->AmPm = AM;
 	}
-
+	
 	// Handles leading 0 on hour
 	if (hTen) {
-		sprintf(buffer,"%i%i:%i%i:%i%i",  hTen, hOne, mTen, mOne, sTen, sOne);
+		sprintf(clockReading,"%i%i:%i%i:%i%i",  hTen, hOne, mTen, mOne, sTen, sOne);
 	} else {
-		sprintf(buffer," %i:%i%i:%i%i", hOne, mTen, mOne, sTen, sOne);
+		sprintf(clockReading," %i:%i%i:%i%i", hOne, mTen, mOne, sTen, sOne);
 	}
 	
 	transition_state(reading);
 	
 	u8g2_ClearBuffer(&u8g2);
-	u8g2_SetFont(&u8g2, u8g2_font_t0_22_tf   );
-	u8g2_SetFontRefHeightText(&u8g2);
-	u8g2_SetFontPosTop(&u8g2);
+	u8g2_SetDisplayRotation(&u8g2, U8G2_R0);
+	u8g2_SetFont(&u8g2, u8g2_font_t0_14b_tf);
 	if (reading->hourtype) {
 		if (reading->AmPm) {
-			u8g2_DrawStr(&u8g2, 100, 30, "PM");
+			u8g2_DrawStr(&u8g2, 110, 55, "PM");
 		} else {
-			u8g2_DrawStr(&u8g2, 100, 30, "AM");
+			u8g2_DrawStr(&u8g2, 110, 55, "AM");
 		}
 	}
 	if (reading->alarmstate == DEACTIVATED) {
 		PORTD &= ~(1<<6);  // Turn off buzzer
 	} else if (reading->alarmstate == ARMED) {
 		PORTD &= ~(1<<6); // Turn off buzzer
-		u8g2_SetFont(&u8g2, u8g2_font_unifont_t_symbols);
-		u8g2_DrawGlyph(&u8g2, 100, 0, 0x23f0);
+		u8g2_SetFont(&u8g2, u8g2_font_unifont_t_76);
+		u8g2_DrawGlyph(&u8g2, 100, 0, 0x2611);
 	} else if (reading->alarmstate == ACTIVE) {
 		alarm_active();
 		if (count <= 10) {
-			u8g2_SetFont(&u8g2, u8g2_font_unifont_t_symbols);
-			u8g2_DrawGlyph(&u8g2, 110, 0, 0x23f0);
+			u8g2_SetFont(&u8g2, u8g2_font_unifont_t_76 );
+			u8g2_DrawGlyph(&u8g2, 110, 0, 0x2611);
 		}
 	}
-	u8g2_SetFont(&u8g2, u8g2_font_t0_22_tf   );
-	u8g2_SetFontRefHeightText(&u8g2);
-	u8g2_SetFontPosTop(&u8g2);
-	u8g2_DrawStr(&u8g2, 10, 30, buffer); // Write Clock String
-	
+	u8g2_SetFont(&u8g2, u8g2_font_profont29_tr );
+	u8g2_SetDrawColor(&u8g2, 2);
+	u8g2_DrawStr(&u8g2, 0, 25, clockReading); // Write Clock String
 	display_alarm_time(reading); // Write Alarm String
-
 	u8g2_SendBuffer(&u8g2);
+	
 }
 
+
 void mode_B(struct Reading *reading, struct Forecast *forecast) {
+	
 	// Mode B is the same fahreinheight/Celsius as Mode C
-	char temperature[20];
-	char sign;
+	float tempReading;
+	char temperature[10], tempMeasurement[5], dayWord[15] = "nothing", humidity[10];
+	char sign, tempSign;
+	uint16_t weatherIcon;
 	uint8_t current, decimalDay;
+	// Find current day in the forecast[] struct array
 	for (uint8_t i = 0; i < 7; i++) {
+		// If the day-date matches to current day, gather that information
 		decimalDay = ((reading->day >> 4) * 10) + (reading->day & 0x0F);
 		if (forecast[i].day == decimalDay) {
 			current = i;
@@ -1206,68 +950,155 @@ void mode_B(struct Reading *reading, struct Forecast *forecast) {
 			current = 0;
 		}
 	}
-	if (forecast[current].temperature < 0) {
+	if (reading->celsius) {
+		tempReading = forecast[current].temperature;
+		tempSign = 'C';
+	} else {
+		tempReading = (forecast[current].temperature * 9/5) + 32; // Convert to fahreinheight
+		tempSign = 'F';
+	}
+	if (tempReading < 0) {
 		sign = '-';
+		tempReading = tempReading * -1;
 	} else {
 		sign = ' ';
 	}
-	int e1 = forecast[current].temperature;
-	int e2 = ((float)forecast[current].temperature - e1)*100;
-	int e3 = (forecast[current].temperature - e1 - (float)e2/100) * 1000;
-	sprintf(temperature, "T : %c%i.%i%i", sign, e1, e2, e3);
+
+	uint8_t t1 = tempReading;
+	uint8_t t2 = ((float)tempReading - t1)*100;
+	uint8_t t3 = (tempReading - t1 - (float)t2/100) * 1000;
+	sprintf(temperature, "%c%i.%i%i", sign, t1, t2, t3);
+	sprintf(tempMeasurement, " %c%c", 0xB0, tempSign);
+	
+	uint8_t h1 = forecast[current].humidity;
+	uint8_t h2 = ((float)forecast[current].humidity - h1)*100;
+	uint8_t h3 = (forecast[current].humidity - h1 - (float)h2/100) * 1000;
+	sprintf(humidity, " %i.%i%i", h1, h2, h3);
+
+	switch (reading->weekday) {
+		case MON:
+			memcpy(dayWord, "Monday", 15);
+			break;
 		
-			
+		case TUE:
+			memcpy(dayWord, "Tuesday", 15);
+			break;
+
+		case WED:
+			memcpy(dayWord, "Wednesday", 15);
+			break;
+		
+		case THU:
+			memcpy(dayWord, "Thursday", 15);
+			break;
+		
+		case FRI:
+			memcpy(dayWord, "Friday", 15);
+			break;
+		
+		case SAT:
+			memcpy(dayWord, "Saturday", 15);
+			break;
+		
+		case SUN:
+			memcpy(dayWord, "Sunday", 15);
+			break;		
+		default:
+			memcpy(dayWord, "error", 15);
+			break;
+	}
+	
+	
+	if (strcmp(forecast[current].status, "sunny") == 0) {
+		weatherIcon = 0x2600; // A sun
+	} else if (strcmp(forecast[current].status, "cloudy") == 0) {
+		weatherIcon = 0x2601; // A cloud
+	} else if (strcmp(forecast[current].status, "rain") == 0) {
+		weatherIcon = 0x2602; // A umbrella
+	} else if (strcmp(forecast[current].status, "storm") == 0) {
+		weatherIcon = 0x2614; // A umbrella with rain
+	} else if (strcmp(forecast[current].status, "snow") == 0) {
+		weatherIcon = 0x2603; // A snowman
+	} else {
+		weatherIcon = 0x2613; // A big X
+	}
+
 	// Display data on OLED
 	u8g2_ClearBuffer(&u8g2);
-	u8g2_SetFont(&u8g2, u8g2_font_unifont_t_symbols);
-	u8g2_SetFontRefHeightText(&u8g2);
-	u8g2_SetFontPosTop(&u8g2);
-	u8g2_DrawStr(&u8g2, 0, 30, temperature );// Low Humid
+	u8g2_SetDisplayRotation(&u8g2, U8G2_R3);
+	u8g2_SetFont(&u8g2, u8g2_font_t0_14b_tf );
+
+	u8g2_DrawStr(&u8g2, 0, 10, dayWord);// Day of the week
+	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf );
+	u8g2_DrawStr(&u8g2, 0, 50, "Temp:");// Temperature Reading
+	u8g2_DrawStr(&u8g2, 0, 65, temperature);// Temperature Reading
+	u8g2_DrawStr(&u8g2, 40, 65, tempMeasurement);// Temperature Measurement
+	u8g2_DrawStr(&u8g2, 0, 85, "Humidity:");// Temperature Reading
+	u8g2_DrawStr(&u8g2, 0, 100, humidity );// Humidity Reading
+	u8g2_DrawStr(&u8g2, 40, 100, "  %");// Humidity Measurement
+	u8g2_DrawStr(&u8g2, 21, 28, forecast[current].status);// Humidity Measurement
+	u8g2_SetFont(&u8g2, u8g2_font_unifont_t_76);
+	u8g2_DrawGlyph(&u8g2, 0, 30, weatherIcon);
 	u8g2_SendBuffer(&u8g2);
 }
+
+
+
+
 
 void mode_C(struct Reading reading) {
 	// Create buffers to place integer to strings
 	char str1[30];
 	char str2[30];
 	char unit1[10];
-	char unit2[10];
 
 	if (reading.celsius) {
-		sprintf(str1, "Temperature:  %i", reading.temperature);
-		sprintf(unit1, " %c%c", 0xB0, 'C');
+		snprintf(str1, 20, "Temperature:  %i", reading.temperature);
+		snprintf(unit1, 5,  " %c%c", 0xB0, 'C');
 	} else {
-		int fahrenheit = (reading.temperature * 9/5) + 35;
+		int fahrenheit = (reading.temperature * 9/5) + 32;
 		sprintf(str1, "Temperature:  %i", fahrenheit);
 		sprintf(unit1, " %c%c", 0xB0, 'F');
 	}
 	sprintf(str2, "Humidity:     %i",reading.humidity);
-	
-	sprintf(unit2, "  %c", '%');
 
-		
+	
 	// Display data on OLED
 	u8g2_ClearBuffer(&u8g2);
 	u8g2_SetDisplayRotation(&u8g2, U8G2_R2);
-	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf );
-	u8g2_SetFontRefHeightText(&u8g2);
-	u8g2_SetFontPosTop(&u8g2);
+	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
+	//u8g2_SetDrawColor(&u8g2, 2);
 	u8g2_DrawStr(&u8g2, 0, 20,str1); // Temperature
-	
 	u8g2_DrawStr(&u8g2, 100, 20,unit1); // Temperature
 	u8g2_DrawStr(&u8g2, 0, 40,str2); // Humidity
-	
-	u8g2_DrawStr(&u8g2, 100, 40,unit2); // Humidity
-
+	u8g2_DrawStr(&u8g2, 100, 40, " %"); // Humidity
 	u8g2_SendBuffer(&u8g2);
-	
-
 }
 
-void mode_D(void) {
+void mode_D(struct Reading *reading) {
 	// Low power mode
-	// Display doesn't display, so have it be blank
 	// Set possible devices to low power mode
-	// aceelerometer must still work to register change back
+
 	// Stuff to disable: Temp/humid ic, oled
+	// Display doesn't display, so have it be blank
+	
+	
+	
+	if (reading->lowpower == 1) {
+		//Set all low power settings
+		
+		// Set OLED to low power
+		u8g2_SetPowerSave(&u8g2, 1);// sets the display into powersave mode
+		
+		// accelerometer must still work to register change back
+		i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
+		i2c_write(0x2C);	// Function code 0x03
+		i2c_write((1<<4)|(1<<3));	// Enable single alarm interrupt (ALM0EN) and external crystal source
+		i2c_stop();
+		
+		reading->lowpower = 2; // Indicates that setting low power is complete
+	}
+
 }
+
+
