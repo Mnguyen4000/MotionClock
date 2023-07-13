@@ -1,5 +1,5 @@
 #include <avr/io.h>
-#define F_CPU 8000000UL
+#define F_CPU 16000000UL
 #include <util/delay.h>
 #include <u8g2.h>
 #include <u8x8_avr.h>
@@ -24,11 +24,6 @@
 #define DEACTIVATED 0
 #define ARMED 1
 #define ACTIVE 2
-
-#define FORECAST 1
-#define CURRENT_TIME 2
-#define AM_OR_PM 3
-#define CELCIUS 4
 
 #define MON 0
 #define TUE 1
@@ -70,7 +65,7 @@ struct Forecast{ // numbers in decimal format
 	uint8_t day; // Decimal format: 0 - 255
 	float temperature;
 	float humidity;
-	char status[10];
+	char status[8];
 };
 
 void sync_forecast(struct Forecast *forecast);
@@ -96,6 +91,7 @@ void update_clock(struct Reading *reading);
 void mode_B(struct Reading *reading, struct Forecast *forecast);
 void mode_D(struct Reading *reading);
 void send_info(struct Reading *reading, struct Forecast *forecast);
+char int_to_char(int number);
 /*
 Notes:
 The clock values are always in 24 hour format, the 12 hour format in the IC is not used
@@ -103,19 +99,23 @@ when in 12 hour format, it is identified through software.
 
 
 */
+
+#define SSD1306 0x78
+
 int main (void)
 {
 	struct Reading reads;
 	struct Forecast fore[7];
 	u8g2_Setup_ssd1306_i2c_128x64_noname_f(&u8g2, U8G2_R0, u8x8_byte_avr_hw_i2c, u8x8_avr_delay);
+	u8g2_SetI2CAddress(&u8g2, SSD1306);
 	u8g2_InitDisplay(&u8g2);
 	u8g2_SetPowerSave(&u8g2, 0);
 	
 	
 	u8g2_ClearBuffer(&u8g2);
-	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf );
+	u8g2_SetFont(&u8g2, u8g2_font_6x13_tr);
 	u8g2_SetFontMode(&u8g2, 1);
-	u8g2_SetDrawColor(&u8g2, 0);
+	u8g2_SetDrawColor(&u8g2, 2);
 	u8g2_SetFontRefHeightText(&u8g2);
 	u8g2_SetFontPosTop(&u8g2);
 	u8g2_DrawStr(&u8g2, 0, 20, "Initial Screen L");
@@ -127,7 +127,7 @@ int main (void)
 	reads.yAxis = 99;
 	reads.zAxis = 99;
 	
-	reads.celsius = 1;
+	reads.celsius = 0;
 	reads.temperature = 0;
 	reads.humidity = 0;
 	
@@ -135,9 +135,9 @@ int main (void)
 	reads.minutes = 0x00;
 	reads.seconds = 0x00;
 	reads.weekday = SAT;
-	reads.hourtype = FULLDAY;
-	reads.alarmhour = 0x23;
-	reads.alarmmin = 0x01;
+	reads.hourtype = HALFDAY;
+	reads.alarmhour = 0x01;
+	reads.alarmmin = 0x00;
 	reads.alarmstate = DEACTIVATED;
 	
 	reads.lowpower = 0;
@@ -153,14 +153,14 @@ int main (void)
 	uart_init(UART_BAUD_SELECT(9600, F_CPU));
 	
 	sei();
-	
+	char stats[50];
 	for(uint8_t a = 0; a < 7; a++){
 		fore[a].day = 0;
 		fore[a].month = 0;
 		fore[a].year = 0;
 		fore[a].temperature = 0;
 		fore[a].humidity = 0;
-		memcpy(fore[a].status, "error", 6);
+		//strncpy(fore[a].status, "error", 6);
 	}
 	uint8_t ct = 0;
 
@@ -174,6 +174,7 @@ int main (void)
 			i2c_stop();
 			reads.lowpower = 0;
 		}
+		
 		if (reads.lowpower == 0) {
 			read_clock(&reads);
 			read_temp_and_humidity(&reads);
@@ -209,14 +210,14 @@ int main (void)
 			receive_data(&reads, fore);
 		}
 		
-		if (ct >=10) {
-			send_info(&reads, fore);
+		if (ct >=20) {
+			//send_info(&reads, fore);			
 			ct = 0;
 		} else {
 			ct++;
 		}
-
-		_delay_ms(100);
+		PORTD ^= (1<<7);
+		_delay_ms(1000);
 	}
 }
 void test(struct Forecast *forecast) {
@@ -226,21 +227,28 @@ void test(struct Forecast *forecast) {
 
 void send_info(struct Reading *reading, struct Forecast *forecast) {
 	
-	char stats[50];
+	char stats[40];
 	uint8_t current, decimalDay, t1, t2, t3, t4, t5, t6;
 	
 	// Accelerometer Readings and onboard Temp/Humid
-	sprintf(stats, "X:%hi Y:%hi Z:%hi, T:%i, H:%i\n", reading->xAxis, reading->yAxis, reading->zAxis, reading->temperature, reading->humidity);
+	snprintf(stats, 20, "X:%hi Y:%hi Z:%hi\n", reading->xAxis, reading->yAxis, reading->zAxis);
+	uart_puts(stats);
+	
+	snprintf(stats, 20, "T:%ui, H:%ui\n", reading->temperature, reading->humidity);
 	uart_puts(stats);
 	
 	// Current Time, Weekday and Hour Type
-	sprintf(stats, "h:%i m:%i s:%i, w:%i, h:%i\n", reading->hours, reading->minutes, reading->seconds, reading->weekday, reading->hourtype);
+	snprintf(stats,20, "h:%ui m:%i s:%ui\n", reading->hours, reading->minutes, reading->seconds);
 	uart_puts(stats);
+	
+	snprintf(stats,20, "w:%ui, h:%ui\n", reading->weekday, reading->hourtype);
+	uart_puts(stats);
+	
 	// Current Alarm Hour, Min, State
 	sprintf(stats, "H:%i M:%i S:%i\n", reading->alarmhour, reading->alarmmin, reading->alarmstate);
 	uart_puts(stats);
-	
-		
+
+
 	for (uint8_t i = 0; i < 7; i++) {
 		// If the day-date matches to current day, gather that information
 		decimalDay = ((reading->day >> 4) * 10) + (reading->day & 0x0F);
@@ -271,10 +279,10 @@ void send_info(struct Reading *reading, struct Forecast *forecast) {
 	t5 = (tempReading - t4)*100;
 	t6 = (tempReading - t4 - t5/100) * 1000;
 	
-	sprintf(stats, "T:%c%i.%i%i H:%i.%i%i s: %s\n", sign, t1, t2, t3, t4, t5, t6, forecast[current].status);
+	sprintf(stats, "T:%c%i.%i%i H:%i.%i%i s:%s\n", sign, t1, t2, t3, t4, t5, t6, forecast[current].status);
 	uart_puts(stats);
-	
-}
+
+} 
 
 void receive_data(struct Reading *reading, struct Forecast *forecast) {
 	char buffer[16];
@@ -310,7 +318,6 @@ void receive_data(struct Reading *reading, struct Forecast *forecast) {
 
 void sync_forecast(struct Forecast *forecast) {	
 	for (uint8_t i = 0; i < 7; i++) { // 7 Days
-			
 		for (uint8_t j = 0; j < 6; j++) { // The days data
 			char buffer[16];
 			char data;
@@ -343,7 +350,7 @@ void sync_forecast(struct Forecast *forecast) {
 					forecast[i].humidity = atof(buffer);
 					break;
 				case 5:
-					memcpy(forecast[i].status, buffer, 10);
+					strncpy(forecast[i].status, buffer, 10);
 					PORTD |= (1<<7);
 					break;
 			}
@@ -611,7 +618,6 @@ void set_clock (struct Reading *reading) {
 	setMonth = 0x2F & reading->month;
 	setYear = reading->year;
 	setWeekday = (1<<3) | reading->weekday;
-
 	
 	// Write the seconds
 	(i2c_start((CLOCK_ADDR<<1)+I2C_WRITE));// set device address and write mode		
@@ -806,8 +812,6 @@ void display_alarm_time(struct Reading *reading) {
 	uint8_t alarmHourCopy;
 	uint8_t mTen, mOne, hTen, hOne;
 	
-
-	
 	// If hourtype is half day but the format is full day (>12), it will fix it for it.
 	if (reading->hourtype == FULLDAY) {
 		if (reading->alarmhour == 0x24) {
@@ -835,13 +839,23 @@ void display_alarm_time(struct Reading *reading) {
 	hTen = (alarmHourCopy >> 4);
 	hOne = alarmHourCopy & 0x0F;
 	char buffer[20];
+	char sample1[20];
 	// Handles leading 0 on hour
 	if (hTen) {
-		sprintf(buffer,"Alarm:%i%i:%i%i:00",  hTen, hOne, mTen, mOne);
+		char sample1[20] = {'A', 'l', 'a','r','m',':',int_to_char(hTen), int_to_char(hOne),
+							':', int_to_char(mTen), int_to_char(mOne), ':', '0', '0'};
+strncpy(buffer, sample1, 20);
+		//snprintf(buffer,20,"Alarm:%i%i:%i%i:00",  hTen, hOne, mTen, mOne);
 		} else {
-		sprintf(buffer,"Alarm: %i:%i%i:00", hOne, mTen, mOne);
+		char sample1[20] = {'A', 'l', 'a','r','m',':',' ', int_to_char(hOne),
+		':', int_to_char(mTen), int_to_char(mOne), ':', '0', '0'};
+strncpy(buffer, sample1, 20);
+		//snprintf(buffer,20,"Alarm: %i:%i%i:00", hOne, mTen, mOne);
 	}
-	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf );
+	
+	u8g2_SetFont(&u8g2, u8g2_font_6x13_tr);
+	u8g2_SetFontMode(&u8g2, 1);
+	u8g2_SetDrawColor(&u8g2, 2);
 	if (reading->hourtype) {
 		if (reading->alarmAmPm) { //0 -> AM, 1-> PM
 			u8g2_DrawStr(&u8g2, 85, 0, "PM");
@@ -891,17 +905,23 @@ void mode_A(struct Reading *reading) {
 	}
 	
 	// Handles leading 0 on hour
+	char display[10];
 	if (hTen) {
-		sprintf(clockReading,"%i%i:%i%i:%i%i",  hTen, hOne, mTen, mOne, sTen, sOne);
+		char sample[10] = {int_to_char(hTen), int_to_char(hOne),':', int_to_char(mTen), int_to_char(mOne) ,':', int_to_char(sTen) , int_to_char(sOne)};
+		strncpy(display, sample, 10);
 	} else {
-		sprintf(clockReading," %i:%i%i:%i%i", hOne, mTen, mOne, sTen, sOne);
+		char sample[10] = {' ', int_to_char(hOne),':', int_to_char(mTen), int_to_char(mOne) ,':', int_to_char(sTen) , int_to_char(sOne)};
+		strncpy(display, sample, 10);
+		//snprintf(clockReading,15," %i:%i%i:%i%i", hOne, mTen, mOne, sTen, sOne);
 	}
 	
 	transition_state(reading);
 	
 	u8g2_ClearBuffer(&u8g2);
 	u8g2_SetDisplayRotation(&u8g2, U8G2_R0);
-	u8g2_SetFont(&u8g2, u8g2_font_t0_14b_tf);
+	u8g2_SetFont(&u8g2, u8g2_font_t0_14b_tr);
+	u8g2_SetFontMode(&u8g2, 1);
+	u8g2_SetDrawColor(&u8g2, 2);
 	if (reading->hourtype) {
 		if (reading->AmPm) {
 			u8g2_DrawStr(&u8g2, 110, 55, "PM");
@@ -923,8 +943,9 @@ void mode_A(struct Reading *reading) {
 		}
 	}
 	u8g2_SetFont(&u8g2, u8g2_font_profont29_tr );
+	u8g2_SetFontMode(&u8g2, 1);
 	u8g2_SetDrawColor(&u8g2, 2);
-	u8g2_DrawStr(&u8g2, 0, 25, clockReading); // Write Clock String
+	u8g2_DrawStr(&u8g2, 0, 25, display); // Write Clock String
 	display_alarm_time(reading); // Write Alarm String
 	u8g2_SendBuffer(&u8g2);
 	
@@ -967,44 +988,45 @@ void mode_B(struct Reading *reading, struct Forecast *forecast) {
 	uint8_t t1 = tempReading;
 	uint8_t t2 = ((float)tempReading - t1)*100;
 	uint8_t t3 = (tempReading - t1 - (float)t2/100) * 1000;
-	sprintf(temperature, "%c%i.%i%i", sign, t1, t2, t3);
-	sprintf(tempMeasurement, " %c%c", 0xB0, tempSign);
+	snprintf(temperature,10, "%c%i.%i%i", sign, t1, t2, t3);
+	snprintf(tempMeasurement,10, " %c%c", 0xB0, tempSign);
 	
 	uint8_t h1 = forecast[current].humidity;
 	uint8_t h2 = ((float)forecast[current].humidity - h1)*100;
 	uint8_t h3 = (forecast[current].humidity - h1 - (float)h2/100) * 1000;
-	sprintf(humidity, " %i.%i%i", h1, h2, h3);
+	snprintf(humidity,10, " %i.%i%i", h1, h2, h3);
+
 
 	switch (reading->weekday) {
 		case MON:
-			memcpy(dayWord, "Monday", 15);
+			strncpy(dayWord, "Monday", 15);
 			break;
 		
 		case TUE:
-			memcpy(dayWord, "Tuesday", 15);
+			strncpy(dayWord, "Tuesday", 15);
 			break;
 
 		case WED:
-			memcpy(dayWord, "Wednesday", 15);
+			strncpy(dayWord, "Wednesday", 15);
 			break;
 		
 		case THU:
-			memcpy(dayWord, "Thursday", 15);
+			strncpy(dayWord, "Thursday", 15);
 			break;
 		
 		case FRI:
-			memcpy(dayWord, "Friday", 15);
+			strncpy(dayWord, "Friday", 15);
 			break;
 		
 		case SAT:
-			memcpy(dayWord, "Saturday", 15);
+			strncpy(dayWord, "Saturday", 15);
 			break;
 		
 		case SUN:
-			memcpy(dayWord, "Sunday", 15);
+			strncpy(dayWord, "Sunday", 15);
 			break;		
 		default:
-			memcpy(dayWord, "error", 15);
+			strncpy(dayWord, "error", 15);
 			break;
 	}
 	
@@ -1026,10 +1048,13 @@ void mode_B(struct Reading *reading, struct Forecast *forecast) {
 	// Display data on OLED
 	u8g2_ClearBuffer(&u8g2);
 	u8g2_SetDisplayRotation(&u8g2, U8G2_R3);
-	u8g2_SetFont(&u8g2, u8g2_font_t0_14b_tf );
-
+	u8g2_SetFont(&u8g2, u8g2_font_t0_14b_tr);
+	u8g2_SetFontMode(&u8g2, 1);
+	u8g2_SetDrawColor(&u8g2, 2);
 	u8g2_DrawStr(&u8g2, 0, 10, dayWord);// Day of the week
-	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf );
+	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
+	u8g2_SetFontMode(&u8g2, 1);
+	u8g2_SetDrawColor(&u8g2, 2);
 	u8g2_DrawStr(&u8g2, 0, 50, "Temp:");// Temperature Reading
 	u8g2_DrawStr(&u8g2, 0, 65, temperature);// Temperature Reading
 	u8g2_DrawStr(&u8g2, 40, 65, tempMeasurement);// Temperature Measurement
@@ -1048,26 +1073,29 @@ void mode_B(struct Reading *reading, struct Forecast *forecast) {
 
 void mode_C(struct Reading reading) {
 	// Create buffers to place integer to strings
-	char str1[30];
-	char str2[30];
+	char str1[10];
+	char str2[10];
 	char unit1[10];
+	char degSign;
+	int displayTemp;
 
 	if (reading.celsius) {
-		snprintf(str1, 20, "Temperature:  %i", reading.temperature);
-		snprintf(unit1, 5,  " %c%c", 0xB0, 'C');
+		displayTemp = reading.temperature;
+		degSign = 'C';
 	} else {
-		int fahrenheit = (reading.temperature * 9/5) + 32;
-		sprintf(str1, "Temperature:  %i", fahrenheit);
-		sprintf(unit1, " %c%c", 0xB0, 'F');
+		displayTemp = (reading.temperature * 9/5) + 32;
+		degSign = 'F';
 	}
-	sprintf(str2, "Humidity:     %i",reading.humidity);
-
+	snprintf(str1,10, "T:  %i", displayTemp);
+	snprintf(unit1,10, " %c%c", 0xB0, degSign);
+	snprintf(str2,10, "H:  %i",reading.humidity);
 	
 	// Display data on OLED
 	u8g2_ClearBuffer(&u8g2);
 	u8g2_SetDisplayRotation(&u8g2, U8G2_R2);
 	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
-	//u8g2_SetDrawColor(&u8g2, 2);
+	u8g2_SetFontMode(&u8g2, 1);
+	u8g2_SetDrawColor(&u8g2, 2);
 	u8g2_DrawStr(&u8g2, 0, 20,str1); // Temperature
 	u8g2_DrawStr(&u8g2, 100, 20,unit1); // Temperature
 	u8g2_DrawStr(&u8g2, 0, 40,str2); // Humidity
@@ -1101,4 +1129,14 @@ void mode_D(struct Reading *reading) {
 
 }
 
-
+// Returns the ASCII of the characters '0' to '9' from 0 to 9
+char int_to_char(int number) {
+	char result = 'N';
+	for (uint8_t i = 0; i < 10; i++) {
+		if (number == i) {
+			result = 0x30+i;
+			break;
+		}
+	}
+	return result;
+}
