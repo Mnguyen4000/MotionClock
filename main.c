@@ -92,6 +92,7 @@ void mode_B(struct Reading *reading, struct Forecast *forecast);
 void mode_D(struct Reading *reading);
 void send_info(struct Reading *reading, struct Forecast *forecast);
 char int_to_char(int number);
+void change_alarm(struct Reading *reading);
 /*
 Notes:
 The clock values are always in 24 hour format, the 12 hour format in the IC is not used
@@ -136,7 +137,7 @@ int main (void)
 	reads.seconds = 0x00;
 	reads.weekday = SAT;
 	reads.hourtype = HALFDAY;
-	reads.alarmhour = 0x01;
+	reads.alarmhour = 0x21;
 	reads.alarmmin = 0x00;
 	reads.alarmstate = DEACTIVATED;
 	
@@ -160,9 +161,9 @@ int main (void)
 		fore[a].year = 0;
 		fore[a].temperature = 0;
 		fore[a].humidity = 0;
-		//strncpy(fore[a].status, "error", 6);
+		strncpy(fore[a].status, "error", 6);
 	}
-	uint8_t ct = 0;
+	uint8_t ct = 0, ct2 = 0;
 
 	while(1) {
 		
@@ -177,7 +178,6 @@ int main (void)
 		
 		if (reads.lowpower == 0) {
 			read_clock(&reads);
-			read_temp_and_humidity(&reads);
 		}
 		
 		read_accel(&reads);
@@ -209,15 +209,22 @@ int main (void)
 		if (uart_available()) {
 			receive_data(&reads, fore);
 		}
-		
-		if (ct >=20) {
-			//send_info(&reads, fore);			
+		if (ct2 <= 40) {
+			ct2++;
+		} else {
+			read_temp_and_humidity(&reads);
 			ct = 0;
+		}
+		read_temp_and_humidity(&reads);
+		if (ct >=20) {
+			send_info(&reads, fore);			
+			ct = 0;
+			PORTD ^= (1<<7);
 		} else {
 			ct++;
 		}
-		PORTD ^= (1<<7);
-		_delay_ms(1000);
+		//PORTD ^= (1<<7);
+		_delay_ms(50);
 	}
 }
 void test(struct Forecast *forecast) {
@@ -231,21 +238,21 @@ void send_info(struct Reading *reading, struct Forecast *forecast) {
 	uint8_t current, decimalDay, t1, t2, t3, t4, t5, t6;
 	
 	// Accelerometer Readings and onboard Temp/Humid
-	snprintf(stats, 20, "X:%hi Y:%hi Z:%hi\n", reading->xAxis, reading->yAxis, reading->zAxis);
+	snprintf(stats, 20, "X:%hi-Y:%hi-Z:%hi\n", reading->xAxis, reading->yAxis, reading->zAxis);
 	uart_puts(stats);
 	
-	snprintf(stats, 20, "T:%ui, H:%ui\n", reading->temperature, reading->humidity);
+	snprintf(stats, 20, "T:%i-H:%i\n", reading->temperature, reading->humidity);
 	uart_puts(stats);
 	
 	// Current Time, Weekday and Hour Type
-	snprintf(stats,20, "h:%ui m:%i s:%ui\n", reading->hours, reading->minutes, reading->seconds);
+	snprintf(stats,20, "h:%i-m:%i-s:%i\n", reading->hours, reading->minutes, reading->seconds);
 	uart_puts(stats);
 	
-	snprintf(stats,20, "w:%ui, h:%ui\n", reading->weekday, reading->hourtype);
+	snprintf(stats,20, "w:%i-h:%i\n", reading->weekday, reading->hourtype);
 	uart_puts(stats);
 	
 	// Current Alarm Hour, Min, State
-	sprintf(stats, "H:%i M:%i S:%i\n", reading->alarmhour, reading->alarmmin, reading->alarmstate);
+	sprintf(stats, "H:%i-M:%i-S:%i\n", reading->alarmhour, reading->alarmmin, reading->alarmstate);
 	uart_puts(stats);
 
 
@@ -278,8 +285,8 @@ void send_info(struct Reading *reading, struct Forecast *forecast) {
 	t4 = tempReading;
 	t5 = (tempReading - t4)*100;
 	t6 = (tempReading - t4 - t5/100) * 1000;
-	
-	sprintf(stats, "T:%c%i.%i%i H:%i.%i%i s:%s\n", sign, t1, t2, t3, t4, t5, t6, forecast[current].status);
+	//char send3[] = {'T', ':', sign, t, '.', }
+	sprintf(stats, "T:%c%i.%i%i-H:%i.%i%i-s:%s\n", sign, t1, t2, t3, t4, t5, t6, forecast[current].status);
 	uart_puts(stats);
 
 } 
@@ -313,6 +320,36 @@ void receive_data(struct Reading *reading, struct Forecast *forecast) {
 		reading->celsius = 1;
 	} else if (strcmp(buffer, "F") == 0) {
 		reading->celsius = 0;
+	} else if (strcmp(buffer, "alarm") == 0) {
+		change_alarm(reading);
+		set_alarm(*reading);
+	}
+}
+
+void change_alarm(struct Reading *reading) {
+	
+	uint8_t vTen, vOne, value;
+	for (uint8_t j = 0; j < 2; j++) { // Alarm Data (Hours, Minutes)
+		char buffer[16];
+		char data;
+		// Message Received
+		for (uint8_t k = 0; k < 16; k++) {
+			data = uart_getc();
+			if (data == '\0') {
+				buffer[k] = '\0';
+				break;
+				} else {
+				buffer[k] = data;
+			}
+		}
+		value = atoi(buffer);
+		vTen = value/10;
+		vOne = value - vTen*10;
+		if (j == 0) {
+			reading->alarmhour = (vTen<<4) | vOne;
+		} else {
+			reading->alarmmin = (vTen<<4) | vOne;
+		}	
 	}
 }
 
@@ -406,14 +443,13 @@ void update_clock(struct Reading *reading) {
 				break;
 		}
 		count++;
-
 	}
 }
 // COMPLETE
 // Reads the temperature and humidity
 // Returns the readings into the Reading Struct
 void read_temp_and_humidity(struct Reading *reading) {
-	unsigned char lowTemp, highTemp, lowHumid, highHumid;
+	uint8_t lowTemp, highTemp, lowHumid, highHumid;
 	// Reading
 	
 	// To use the humidity sensor, you must awaken it, then it allows the acquisition of temp and humidity sensors
@@ -447,13 +483,20 @@ void read_temp_and_humidity(struct Reading *reading) {
 			
 		//Calculates actual temperature and humidity from readings
 		short temperatureCalc = (highTemp * 256) + ((lowTemp >> 4)* 16) + (lowTemp & 0x0F);
-		short temperature = temperatureCalc/10;
+		uint8_t temperature = temperatureCalc/10;
 		short humidityCalc = (highHumid * 256) + ((lowHumid >> 4)* 16) + (lowHumid & 0x0F);
-		short humidity = humidityCalc/10;
-			
+		uint8_t humidity = humidityCalc/10;
+		
 		// Update readings into struct
-		reading->humidity = humidity;
-		reading->temperature = temperature;
+		if (humidity <=100) {
+			reading->humidity = humidity;
+		}
+		if (temperature <= 100) {
+			reading->temperature = temperature;
+		}	
+		
+		
+		
 	}     
 }
 
@@ -811,16 +854,28 @@ void alarm_active(void) {
 void display_alarm_time(struct Reading *reading) {
 	uint8_t alarmHourCopy;
 	uint8_t mTen, mOne, hTen, hOne;
+	uint8_t tempTen, tempOne, tempValue;
 	
 	// If hourtype is half day but the format is full day (>12), it will fix it for it.
 	if (reading->hourtype == FULLDAY) {
 		if (reading->alarmhour == 0x24) {
-			alarmHourCopy = 0x12;
+			alarmHourCopy = 0x00;
+			reading->alarmAmPm = AM;
 		} else {
 			alarmHourCopy = reading->alarmhour & 0x3F;
 		}
 	} else if (reading->hourtype == HALFDAY && reading->alarmhour > 0x12) { // any clock value in pm
-		alarmHourCopy = reading->alarmhour - 0x12;
+		//alarmHourCopy = reading->alarmhour - 0x12;
+		tempTen = reading->alarmhour >> 4;
+		tempOne = reading->alarmhour & 0x0F;
+		tempValue = tempTen * 10 + tempOne;
+		tempValue -= 12;
+		
+		tempTen = tempValue/10;
+		tempOne = tempValue - (tempTen*10);
+		
+		alarmHourCopy = tempTen << 4 | tempOne;
+		
 		reading->alarmAmPm = PM;
 	} else if (reading->hourtype == HALFDAY && reading->alarmhour == 0x12){ // exception: 12PM
 		alarmHourCopy = reading->alarmhour;
@@ -828,7 +883,10 @@ void display_alarm_time(struct Reading *reading) {
 	} else if (reading->hourtype == HALFDAY && reading->alarmhour == 0x00){ // exception: 12AM
 		alarmHourCopy = 0x12;
 		reading->alarmAmPm = AM;
-	} else {
+	} else if (reading->hourtype == HALFDAY && reading->alarmhour == 0x24){ // exception: 12AM
+		alarmHourCopy = 0x12;
+		reading->alarmAmPm = AM;
+	} else{
 		alarmHourCopy = reading->alarmhour;
 		reading->alarmAmPm = AM;
 	}
@@ -844,12 +902,12 @@ void display_alarm_time(struct Reading *reading) {
 	if (hTen) {
 		char sample1[20] = {'A', 'l', 'a','r','m',':',int_to_char(hTen), int_to_char(hOne),
 							':', int_to_char(mTen), int_to_char(mOne), ':', '0', '0'};
-strncpy(buffer, sample1, 20);
+		strncpy(buffer, sample1, 20);
 		//snprintf(buffer,20,"Alarm:%i%i:%i%i:00",  hTen, hOne, mTen, mOne);
 		} else {
 		char sample1[20] = {'A', 'l', 'a','r','m',':',' ', int_to_char(hOne),
 		':', int_to_char(mTen), int_to_char(mOne), ':', '0', '0'};
-strncpy(buffer, sample1, 20);
+		strncpy(buffer, sample1, 20);
 		//snprintf(buffer,20,"Alarm: %i:%i%i:00", hOne, mTen, mOne);
 	}
 	
@@ -956,7 +1014,7 @@ void mode_B(struct Reading *reading, struct Forecast *forecast) {
 	
 	// Mode B is the same fahreinheight/Celsius as Mode C
 	float tempReading;
-	char temperature[10], tempMeasurement[5], dayWord[15] = "nothing", humidity[10];
+	char temperature[10], tempMeasurement[10], dayWord[15] = "nothing", humidity[10];
 	char sign, tempSign;
 	uint16_t weatherIcon;
 	uint8_t current, decimalDay;
@@ -989,7 +1047,9 @@ void mode_B(struct Reading *reading, struct Forecast *forecast) {
 	uint8_t t2 = ((float)tempReading - t1)*100;
 	uint8_t t3 = (tempReading - t1 - (float)t2/100) * 1000;
 	snprintf(temperature,10, "%c%i.%i%i", sign, t1, t2, t3);
-	snprintf(tempMeasurement,10, " %c%c", 0xB0, tempSign);
+	char sample1[5] = {' ', 0xB0, tempSign};
+	strncpy(tempMeasurement, sample1, 10);
+	//snprintf(tempMeasurement,10, " %c%c", 0xB0, tempSign);
 	
 	uint8_t h1 = forecast[current].humidity;
 	uint8_t h2 = ((float)forecast[current].humidity - h1)*100;
@@ -1075,31 +1135,40 @@ void mode_C(struct Reading reading) {
 	// Create buffers to place integer to strings
 	char str1[10];
 	char str2[10];
-	char unit1[10];
-	char degSign;
+	char unit1[5];
+	//char degSign;
 	int displayTemp;
 
 	if (reading.celsius) {
 		displayTemp = reading.temperature;
-		degSign = 'C';
+		char degSign[5] = {'C', '\0'};
+		strncpy(unit1, degSign, 5);
 	} else {
 		displayTemp = (reading.temperature * 9/5) + 32;
-		degSign = 'F';
+		char degSign[2] = {'F', '\0'};
+		strncpy(unit1, degSign, 5);
 	}
-	snprintf(str1,10, "T:  %i", displayTemp);
-	snprintf(unit1,10, " %c%c", 0xB0, degSign);
-	snprintf(str2,10, "H:  %i",reading.humidity);
-	
+	snprintf(str1,10, "%i", displayTemp);
+	//snprintf(unit1,10, " %c%c", 0xB0, degSign);
+	snprintf(str2,10, "%i",reading.humidity);
+	char degree[] = {0xB0, '\0'};
 	// Display data on OLED
 	u8g2_ClearBuffer(&u8g2);
 	u8g2_SetDisplayRotation(&u8g2, U8G2_R2);
-	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
 	u8g2_SetFontMode(&u8g2, 1);
 	u8g2_SetDrawColor(&u8g2, 2);
-	u8g2_DrawStr(&u8g2, 0, 20,str1); // Temperature
-	u8g2_DrawStr(&u8g2, 100, 20,unit1); // Temperature
-	u8g2_DrawStr(&u8g2, 0, 40,str2); // Humidity
-	u8g2_DrawStr(&u8g2, 100, 40, " %"); // Humidity
+	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
+	u8g2_DrawStr(&u8g2, 105, 15,degree); // Temperature
+	
+	u8g2_SetFont(&u8g2, u8g2_font_t0_14b_tr);
+
+	u8g2_DrawStr(&u8g2, 0, 00,"Temperature: "); // Temperature
+	u8g2_DrawStr(&u8g2, 0, 15,str1); // Temperature
+	u8g2_DrawStr(&u8g2, 110, 15,unit1); // Temperature
+	
+	u8g2_DrawStr(&u8g2, 0, 30,"Humidity: "); // Temperature
+	u8g2_DrawStr(&u8g2, 0,45 ,str2); // Humidity
+	u8g2_DrawStr(&u8g2, 110, 45, "%"); // Humidity
 	u8g2_SendBuffer(&u8g2);
 }
 
