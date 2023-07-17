@@ -16,7 +16,7 @@ data = data_json.get('weather')
 
 root = Tk()
 root.title("Motion Clock GUI")
-root.geometry("500x400")  # Sets window size
+root.geometry("500x425")  # Sets window size
 root.resizable(0, 0)  # Disables window readjusting
 
 
@@ -117,53 +117,58 @@ humid.grid(row=5, column=1, sticky=W)
 humidmeasurement = Label(root, text="%")
 humidmeasurement.grid(row=5, column=2, sticky=W)
 
-onboardClockHrTxt = Label(root, text="Device Clock Hour::")
+onboardClockHrTxt = Label(root, text="Temperature Measurement: ")
 onboardClockHrTxt.grid(row=6, column=0, sticky=W)
+onboardClockHr = Label(root, textvariable=celsius)
+onboardClockHr.grid(row=6, column=1, sticky=W, columnspan=2)
+
+onboardClockHrTxt = Label(root, text="Device Clock Hour::")
+onboardClockHrTxt.grid(row=7, column=0, sticky=W)
 onboardClockHr = Label(root, textvariable=hoursValue)
-onboardClockHr.grid(row=6, column=1, sticky=W)
+onboardClockHr.grid(row=7, column=1, sticky=W)
 
 
 onboardClockMinTxt = Label(root, text="Device Clock Min::")
-onboardClockMinTxt.grid(row=7, column=0, sticky=W)
+onboardClockMinTxt.grid(row=8, column=0, sticky=W)
 onboardClockMin = Label(root, textvariable=minutesValue)
-onboardClockMin.grid(row=7, column=1, sticky=W)
+onboardClockMin.grid(row=8, column=1, sticky=W)
 
 
 onboardClockSecTxt = Label(root, text="Device Clock Sec::")
-onboardClockSecTxt.grid(row=8, column=0, sticky=W)
+onboardClockSecTxt.grid(row=9, column=0, sticky=W)
 onboardClockSec = Label(root, textvariable=secondsValue)
-onboardClockSec.grid(row=8, column=1, sticky=W)
+onboardClockSec.grid(row=9, column=1, sticky=W)
 
 
 
 weekdayText = Label(root, text="Weekday: ")
-weekdayText.grid(row=9, column=0, sticky=W)
+weekdayText.grid(row=10, column=0, sticky=W)
 weekday = Label(root, textvariable=weekdayValue)
-weekday.grid(row=9, column=1, sticky=W, columnspan=2)
+weekday.grid(row=10, column=1, sticky=W, columnspan=2)
 
 hourtypeText = Label(root, text="Time Setting: ")
-hourtypeText.grid(row=10, column=0, sticky=W)
+hourtypeText.grid(row=11, column=0, sticky=W)
 hourtype = Label(root, textvariable=hourTypeValue)
-hourtype.grid(row=10, column=1, sticky=W,columnspan=2)
+hourtype.grid(row=11, column=1, sticky=W,columnspan=2)
 
 
 alarmHourtext = Label(root, text="Alarm Hour:: ")
-alarmHourtext.grid(row=11, column=0, sticky=W)
+alarmHourtext.grid(row=12, column=0, sticky=W)
 alarmHour = Label(root, textvariable=alarmhourValue)
-alarmHour.grid(row=11, column=1, sticky=W)
+alarmHour.grid(row=12, column=1, sticky=W)
 
 
 alarmMinText = Label(root, text="Alarm Min::")
-alarmMinText.grid(row=12, column=0, sticky=W)
+alarmMinText.grid(row=13, column=0, sticky=W)
 alarmMin = Label(root, textvariable=alarmminuteValue)
-alarmMin.grid(row=12, column=1, sticky=W)
+alarmMin.grid(row=13, column=1, sticky=W)
 
 
 
 alarmstatusText = Label(root, text="Alarm Status:")
-alarmstatusText.grid(row=13, column=0, sticky=W)
+alarmstatusText.grid(row=14, column=0, sticky=W)
 alarmstatusReading = Label(root, textvariable=alarmState)
-alarmstatusReading.grid(row=13, column=1, sticky=W, columnspan=2)
+alarmstatusReading.grid(row=14, column=1, sticky=W, columnspan=2)
 
 
 forecast1 = Label(root, text="Forecast Weather: ")
@@ -184,6 +189,7 @@ forecast3 = Label(root, textvariable=fchumidityValue)
 forecast3.grid(row=17, column=1, sticky=W)
 forecast3measurement = Label(root, text="%")
 forecast3measurement.grid(row=17, column=2, sticky=W)
+
 baudrate = 9600
 port = "COM13"
 
@@ -198,7 +204,7 @@ def main():
 
     print(data)
     print(data.get('2023-7-6'))
-
+    connection_signal()
     static_text()
 
     current_time()
@@ -212,11 +218,9 @@ def main():
     twentyfourButton = Button(root, text='24 Hour Format', command=twentyfourhour)
     twentyfourButton.grid(row=12, column=3)
 
-    testbutton = Button(root, text='Test Button', command=test)
-    testbutton.grid(row=20, column=0)
+    """testbutton = Button(root, text='Test Button', command=test)
+    testbutton.grid(row=20, column=0)"""
 
-    AMButton = Button(root, text='button')
-    AMButton.grid()
 
     syncfcbutton = Button(root, text=' Synchronise Forecast ', command=send_forecast)
     syncfcbutton.grid(row=9, column=3)
@@ -225,10 +229,10 @@ def main():
     syncCbutton.grid(row=8, column=3)
 
     cButton = Button(root, text='    Set Celsius    ', command=send_C)
-    cButton.grid(row=9, column=4)
+    cButton.grid(row=13, column=4)
 
     fButton = Button(root, text=' Set Fahrenheit ', command=send_F)
-    fButton.grid(row=8, column=4)
+    fButton.grid(row=12, column=4)
 
     setAlarmButton = Button(root, text='Set Alarm', command=send_alarm)
     setAlarmButton.grid(row=5, column=3, columnspan=2)
@@ -305,8 +309,6 @@ def main():
         time.sleep(0.1)
 
 def static_text():
-
-
     currenttimetext = Label(root, text='Current Time: ',font=("Arial", 12))
     currenttimetext.grid(row = 0, column=3, sticky=W)
 
@@ -330,10 +332,10 @@ def decode_stats():
         first = ser.readline().decode('ascii')
         #print(first)
         a = first.split('+')
-        print(a)
-        print(str(ser.in_waiting))
+        #print(a)
+        #print(str(ser.in_waiting))
 
-        print("foundit")
+        #print("foundit")
         if a[0][0] == 'X': # Accelerometer and Onboard Temp/Humidity
             for each_stat in a:
                 component = each_stat.partition(':')
@@ -393,11 +395,14 @@ def decode_stats():
                     elif component[2] == '2':
                         alarmState.set("ACTIVE")
                 elif component[0] == 'C': # Celsius or Fahrenheit
-                    celsius.set(component[2].strip("\n"))
+                    if component[2].strip("\n") == '1':
+                        celsius.set("Celsius")
+                    elif component[2].strip("\n") == '0':
+                        celsius.set("Fahrenheit ")
 
         if a[0][0] == 'T': # Forecast Section
             for each_stat in a:
-                print(each_stat)
+                #print(each_stat)
                 component = each_stat.partition(':')
                 if component[0] == 'T':
                     fctemperatureValue.set(component[2].strip(" \n")) # Forecast Temperature
@@ -408,8 +413,9 @@ def decode_stats():
 
     root.after(50, decode_stats)
 
-def test():
-    print('Receiving...')
+def connection_signal():
+    ser.write("K\0".encode('ascii'))
+    root.after(1000, connection_signal)
 
 def twelvehour():
     ser.write("12hour\0".encode('ascii'))
