@@ -43,20 +43,21 @@ u8g2_t u8g2;
 	short xAxis;
 	short yAxis;
 	short zAxis;
-	uint8_t seconds; // ONLY 24 HOUR
-	uint8_t minutes; // ONLY 24 HOUR
-	uint8_t hours; // ONLY 24 HOUR
+	uint8_t seconds; // ONLY 24 HOUR in HEX
+	uint8_t minutes; // ONLY 24 HOUR in HEX
+	uint8_t hours; // ONLY 24 HOUR in HEX
 	uint8_t day; // 0x00 to 0x30/0x31
 	uint8_t month; // 0x00 to 0x12
 	uint8_t year; // Hexadecimal of the last 2 digits of the year 0x00 to 0x99
 	uint8_t weekday; // MON -> 0, SUN -> 6
 	uint8_t hourtype;
 	uint8_t AmPm;
-	uint8_t alarmmin; // ONLY 24 HOUR
-	uint8_t alarmhour; // ONLY 24 HOUR
-	uint8_t alarmAmPm; // ONLY 24 HOUR
+	uint8_t alarmmin; // ONLY 24 HOUR in HEX
+	uint8_t alarmhour; // ONLY 24 HOUR in HEX
+	uint8_t alarmAmPm; // ONLY 24 HOUR in HEX
 	uint8_t alarmstate;
 	uint8_t lowpower;
+	uint8_t connected; // 0 -> not connected, 1 -> pending another signal, 2 -> new signal of connection
 };
 
 struct Forecast{ // numbers in decimal format
@@ -140,7 +141,7 @@ int main (void)
 	reads.alarmhour = 0x21;
 	reads.alarmmin = 0x00;
 	reads.alarmstate = DEACTIVATED;
-	
+	reads.connected = 0;
 	reads.lowpower = 0;
 	
 	set_clock(&reads);
@@ -163,7 +164,7 @@ int main (void)
 		fore[a].humidity = 0;
 		strncpy(fore[a].status, "error", 6);
 	}
-	uint8_t ct = 0, ct2 = 0;
+	uint8_t ct = 0, ct2 = 0, ct3 = 0;
 
 	while(1) {
 		
@@ -213,17 +214,27 @@ int main (void)
 			ct2++;
 		} else {
 			read_temp_and_humidity(&reads);
-			ct = 0;
+			ct2 = 0;
 		}
-		read_temp_and_humidity(&reads);
-		if (ct >=20) {
+		
+		if (ct == 5) {
 			send_info(&reads, fore);			
-			ct = 0;
 			PORTD ^= (1<<7);
+			ct = 0;
 		} else {
 			ct++;
 		}
-		//PORTD ^= (1<<7);
+		
+
+		if (reads.connected == 2) {
+			ct3 = 20;
+			reads.connected = 1;
+		} else if (reads.connected == 1){
+			ct3--;
+		}
+		if (ct3 <= 0) {
+			reads.connected = 0;
+		}
 		_delay_ms(50);
 	}
 }
@@ -232,27 +243,29 @@ void test(struct Forecast *forecast) {
 	
 }
 
+uint8_t hex_to_deci(uint8_t number) {
+	uint8_t ten, one, deci;
+	ten = (number >> 4) * 10;
+	one = number & 0x0F;
+	deci = ten + one;
+	return deci;
+}
+
 void send_info(struct Reading *reading, struct Forecast *forecast) {
 	
 	char stats[40];
 	uint8_t current, decimalDay, t1, t2, t3, t4, t5, t6;
 	
 	// Accelerometer Readings and onboard Temp/Humid
-	snprintf(stats, 20, "X:%hi-Y:%hi-Z:%hi\n", reading->xAxis, reading->yAxis, reading->zAxis);
-	uart_puts(stats);
-	
-	snprintf(stats, 20, "T:%i-H:%i\n", reading->temperature, reading->humidity);
+	snprintf(stats, 40, "X:%hi+Y:%hi+Z:%hi+T:%i+H:%i\n", reading->xAxis, reading->yAxis, reading->zAxis, reading->temperature, reading->humidity);
 	uart_puts(stats);
 	
 	// Current Time, Weekday and Hour Type
-	snprintf(stats,20, "h:%i-m:%i-s:%i\n", reading->hours, reading->minutes, reading->seconds);
+	snprintf(stats,40, "h:%i+m:%i+s:%i+w:%i+H:%i\n", hex_to_deci(reading->hours), hex_to_deci(reading->minutes), hex_to_deci(reading->seconds), reading->weekday, reading->hourtype);
 	uart_puts(stats);
 	
-	snprintf(stats,20, "w:%i-h:%i\n", reading->weekday, reading->hourtype);
-	uart_puts(stats);
-	
-	// Current Alarm Hour, Min, State
-	sprintf(stats, "H:%i-M:%i-S:%i\n", reading->alarmhour, reading->alarmmin, reading->alarmstate);
+	// Current Alarm Hour, Min, State, Celsius Status
+	snprintf(stats,40, "H:%i+M:%i+S:%i+C:%i\n", hex_to_deci(reading->alarmhour), hex_to_deci(reading->alarmmin), reading->alarmstate, reading->celsius);
 	uart_puts(stats);
 
 
@@ -286,7 +299,7 @@ void send_info(struct Reading *reading, struct Forecast *forecast) {
 	t5 = (tempReading - t4)*100;
 	t6 = (tempReading - t4 - t5/100) * 1000;
 	//char send3[] = {'T', ':', sign, t, '.', }
-	sprintf(stats, "T:%c%i.%i%i-H:%i.%i%i-s:%s\n", sign, t1, t2, t3, t4, t5, t6, forecast[current].status);
+	sprintf(stats, "T:%c%i.%i%i+H:%i.%i%i+s:%s\n", sign, t1, t2, t3, t4, t5, t6, forecast[current].status);
 	uart_puts(stats);
 
 } 
@@ -323,6 +336,8 @@ void receive_data(struct Reading *reading, struct Forecast *forecast) {
 	} else if (strcmp(buffer, "alarm") == 0) {
 		change_alarm(reading);
 		set_alarm(*reading);
+	} else if (strcmp(buffer, "K") == 0) {
+		reading->connected = 2;
 	}
 }
 
@@ -987,6 +1002,11 @@ void mode_A(struct Reading *reading) {
 			u8g2_DrawStr(&u8g2, 110, 55, "AM");
 		}
 	}
+	if (reading->connected) {
+		u8g2_SetFont(&u8g2, u8g2_font_unifont_t_76);
+		u8g2_DrawGlyph(&u8g2, 0, 50, 0x2620);
+	}
+
 	if (reading->alarmstate == DEACTIVATED) {
 		PORTD &= ~(1<<6);  // Turn off buzzer
 	} else if (reading->alarmstate == ARMED) {
@@ -1108,6 +1128,11 @@ void mode_B(struct Reading *reading, struct Forecast *forecast) {
 	// Display data on OLED
 	u8g2_ClearBuffer(&u8g2);
 	u8g2_SetDisplayRotation(&u8g2, U8G2_R3);
+	if (reading->connected) {
+		u8g2_SetFont(&u8g2, u8g2_font_unifont_t_76);
+		u8g2_DrawGlyph(&u8g2, 50, 48, 0x2620);
+	}
+
 	u8g2_SetFont(&u8g2, u8g2_font_t0_14b_tr);
 	u8g2_SetFontMode(&u8g2, 1);
 	u8g2_SetDrawColor(&u8g2, 2);
@@ -1115,6 +1140,7 @@ void mode_B(struct Reading *reading, struct Forecast *forecast) {
 	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
 	u8g2_SetFontMode(&u8g2, 1);
 	u8g2_SetDrawColor(&u8g2, 2);
+	
 	u8g2_DrawStr(&u8g2, 0, 50, "Temp:");// Temperature Reading
 	u8g2_DrawStr(&u8g2, 0, 65, temperature);// Temperature Reading
 	u8g2_DrawStr(&u8g2, 40, 65, tempMeasurement);// Temperature Measurement
@@ -1157,6 +1183,11 @@ void mode_C(struct Reading reading) {
 	u8g2_SetDisplayRotation(&u8g2, U8G2_R2);
 	u8g2_SetFontMode(&u8g2, 1);
 	u8g2_SetDrawColor(&u8g2, 2);
+	if (reading.connected) {
+		u8g2_SetFont(&u8g2, u8g2_font_unifont_t_76);
+		u8g2_DrawGlyph(&u8g2, 110, 0, 0x2620);
+	}
+
 	u8g2_SetFont(&u8g2, u8g2_font_6x13_tf);
 	u8g2_DrawStr(&u8g2, 105, 15,degree); // Temperature
 	
