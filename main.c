@@ -86,7 +86,7 @@ void mode_A(struct Reading *reading);
 void mode_C(struct Reading reading);
 void transition_state(struct Reading *reading);
 void clear_alarm_flags(void);
-static uint8_t count = 0;
+static uint8_t staticCount = 0, alarm_count = 0, int_count = 0;
 void display_alarm_time(struct Reading *reading);
 void update_clock(struct Reading *reading);
 void mode_B(struct Reading *reading, struct Forecast *forecast);
@@ -94,6 +94,7 @@ void mode_D(struct Reading *reading);
 void send_info(struct Reading *reading, struct Forecast *forecast);
 char int_to_char(int number);
 void change_alarm(struct Reading *reading);
+void alarm_active(void);
 /*
 Notes:
 The clock values are always in 24 hour format, the 12 hour format in the IC is not used
@@ -167,7 +168,6 @@ int main (void)
 	uint8_t ct = 0, ct2 = 0, ct3 = 0;
 
 	while(1) {
-		
 		if (reads.lowpower == 2) {
 			u8g2_SetPowerSave(&u8g2, 0);
 			i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
@@ -183,7 +183,7 @@ int main (void)
 		
 		read_accel(&reads);
 		current_mode = detect_mode(reads);
-		//mode_C(reads);
+
 		
 		if (current_mode != 'N') {
 			switch (current_mode) {
@@ -217,13 +217,17 @@ int main (void)
 			ct2 = 0;
 		}
 		
-		if (ct == 5) {
-			send_info(&reads, fore);			
-			PORTD ^= (1<<7);
-			ct = 0;
-		} else {
-			ct++;
+		
+		if (reads.connected) {
+			if (ct == 5) {
+				send_info(&reads, fore);
+				PORTD ^= (1<<7);
+				ct = 0;
+				} else {
+				ct++;
+			}
 		}
+
 		
 
 		if (reads.connected == 2) {
@@ -773,13 +777,18 @@ void transition_state(struct Reading *reading) {
 			clear_alarm_flags();
 		}
 	}
-	// Clear interrupt
-	i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
-	i2c_write(0x30);	// Function code 0x00
-	i2c_stop();
-	i2c_rep_start((ACCEL_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-	i2c_readNak();								// Clears the interrupt
-	i2c_stop();
+	if (int_count == 5) {
+		// Clear interrupt
+		i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
+		i2c_write(0x30);	// Function code 0x00
+		i2c_stop();
+		i2c_rep_start((ACCEL_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
+		i2c_readNak();								// Clears the interrupt
+		i2c_stop();
+	} else {
+		int_count++;
+	}
+
 }
 
 //COMPLETE
@@ -858,11 +867,14 @@ void set_alarm (struct Reading reading) {
 
 void alarm_active(void) {
 	// Toggles PORTD6 GPIO
-	count += 1; // count goes up every 20ms
-	if (count <= 14) { // 700ms
+	alarm_count += 1; // count goes up every 20ms
+	if (alarm_count <= 14) { // 700ms
 		PORTD |= (1<<6);
-		} else if (count > 14 && count <= 20){
+	} else if (alarm_count > 14 && alarm_count < 20){
 		PORTD &= ~(1<<6); // 300ms
+	}
+	if (alarm_count == 20) {
+		alarm_count = 0;
 	}
 }
 
@@ -945,8 +957,8 @@ void mode_A(struct Reading *reading) {
 	char clockReading[15];
 	
 	// Reset counter if it gets too high
-	if (count >= 20) {
-		count = 0;
+	if (staticCount >= 20) {
+		staticCount = 0;
 	}
 	
 	seconds = (reading->seconds>>4) * 10 + (reading->seconds & 0x0F);
@@ -1012,12 +1024,13 @@ void mode_A(struct Reading *reading) {
 	} else if (reading->alarmstate == ARMED) {
 		PORTD &= ~(1<<6); // Turn off buzzer
 		u8g2_SetFont(&u8g2, u8g2_font_unifont_t_76);
-		u8g2_DrawGlyph(&u8g2, 100, 0, 0x2611);
+		u8g2_DrawGlyph(&u8g2, 110, 0, 0x2611);
 	} else if (reading->alarmstate == ACTIVE) {
 		alarm_active();
-		if (count <= 10) {
+		if (staticCount <= 10) {
 			u8g2_SetFont(&u8g2, u8g2_font_unifont_t_76 );
 			u8g2_DrawGlyph(&u8g2, 110, 0, 0x2611);
+			staticCount++;
 		}
 	}
 	u8g2_SetFont(&u8g2, u8g2_font_profont29_tr );
