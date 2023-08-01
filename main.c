@@ -86,7 +86,7 @@ void mode_A(struct Reading *reading);
 void mode_C(struct Reading reading);
 void transition_state(struct Reading *reading);
 void clear_alarm_flags(void);
-static uint8_t staticCount = 0, alarm_count = 0, int_count = 0;
+static uint8_t staticCount = 0, alarm_count = 0;
 void display_alarm_time(struct Reading *reading);
 void update_clock(struct Reading *reading);
 void mode_B(struct Reading *reading, struct Forecast *forecast);
@@ -156,7 +156,7 @@ int main (void)
 	uart_init(UART_BAUD_SELECT(9600, F_CPU));
 	
 	sei();
-	char stats[50];
+
 	for(uint8_t a = 0; a < 7; a++){
 		fore[a].day = 0;
 		fore[a].month = 0;
@@ -777,29 +777,24 @@ void transition_state(struct Reading *reading) {
 			clear_alarm_flags();
 		}
 	}
-	if (int_count == 5) {
-		// Clear interrupt
-		i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
-		i2c_write(0x30);	// Function code 0x00
-		i2c_stop();
-		i2c_rep_start((ACCEL_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
-		i2c_readNak();								// Clears the interrupt
-		i2c_stop();
-	} else {
-		int_count++;
-	}
-
+	// Clears double tap interrupt
+	i2c_start((ACCEL_ADDR<<1)+I2C_WRITE);// set device address and write mode
+	i2c_write(0x30);	// Function code 0x00
+	i2c_stop();
+	i2c_rep_start((ACCEL_ADDR<<1)+I2C_READ);    // Set device	Address and Read Mode
+	i2c_readNak();								// Clears the interrupt
+	i2c_stop();
 }
 
 //COMPLETE
 // Returns 'A', 'B', 'C', 'D', or 'N' Depending on what mode its in
 char detect_mode(struct Reading reading) {
 	char result;
-	if (reading.xAxis < 50 && reading.xAxis > -50 && reading.yAxis < -200) {
+	if (reading.xAxis < 50 && reading.xAxis > -50 && reading.yAxis > 200) {
 		result = 'A';
 	} else if (reading.yAxis < 50 && reading.yAxis > -50 && reading.xAxis > 200) {
 		result = 'B';
-	} else if (reading.xAxis < 50 && reading.xAxis > -50 && reading.yAxis > 200) {
+	} else if (reading.xAxis < 50 && reading.xAxis > -50 && reading.yAxis < -200) {
 		result = 'C';
 	} else if (reading.yAxis < 50 && reading.yAxis > -50 && reading.xAxis < -200) {
 		result = 'D';
@@ -867,7 +862,7 @@ void set_alarm (struct Reading reading) {
 
 void alarm_active(void) {
 	// Toggles PORTD6 GPIO
-	alarm_count += 1; // count goes up every 20ms
+	alarm_count++; // count goes up every 20ms
 	if (alarm_count <= 14) { // 700ms
 		PORTD |= (1<<6);
 	} else if (alarm_count > 14 && alarm_count < 20){
@@ -924,7 +919,7 @@ void display_alarm_time(struct Reading *reading) {
 	hTen = (alarmHourCopy >> 4);
 	hOne = alarmHourCopy & 0x0F;
 	char buffer[20];
-	char sample1[20];
+	
 	// Handles leading 0 on hour
 	if (hTen) {
 		char sample1[20] = {'A', 'l', 'a','r','m',':',int_to_char(hTen), int_to_char(hOne),
@@ -954,12 +949,6 @@ void display_alarm_time(struct Reading *reading) {
 void mode_A(struct Reading *reading) {
 	uint8_t sTen, sOne, mTen, mOne, hTen, hOne;
 	uint8_t seconds, minutes, hours;
-	char clockReading[15];
-	
-	// Reset counter if it gets too high
-	if (staticCount >= 20) {
-		staticCount = 0;
-	}
 	
 	seconds = (reading->seconds>>4) * 10 + (reading->seconds & 0x0F);
 	minutes = (reading->minutes>>4) * 10 + (reading->minutes & 0x0F);
@@ -1027,11 +1016,14 @@ void mode_A(struct Reading *reading) {
 		u8g2_DrawGlyph(&u8g2, 110, 0, 0x2611);
 	} else if (reading->alarmstate == ACTIVE) {
 		alarm_active();
-		if (staticCount <= 10) {
+		if (staticCount <= 5) {
 			u8g2_SetFont(&u8g2, u8g2_font_unifont_t_76 );
 			u8g2_DrawGlyph(&u8g2, 110, 0, 0x2611);
-			staticCount++;
+		} else if (staticCount >= 10) {
+			// Reset counter if it gets too high
+			staticCount = 0;
 		}
+		staticCount++;
 	}
 	u8g2_SetFont(&u8g2, u8g2_font_profont29_tr );
 	u8g2_SetFontMode(&u8g2, 1);
