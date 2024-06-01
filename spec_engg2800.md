@@ -32,7 +32,7 @@ RollClock is a device similar to a bedside alarm clock. However, rather than bei
 
 Your device is required to use the following OLED display: ETSG 24-05-06 (the manufacturer documentation can be found [here](https://www.buydisplay.com/i2c-white-1-3-inch-oled-display-module-128x64-arduino-raspberry-pi)). This display is used to communicate the time, date and other information to the user. The display mode changes depending on the rotation of the device - the four possible rotations are shown in the image below:
 
-![Display rotations](https://source.eait.uq.edu.au/gitlist/engg2800_2023s1_spec/raw/master/display.png)
+![Display rotations](https://github.com/Mnguyen4000/MotionClock/edit/main/display.png)
 
 The display must update at a rate of at least 1Hz and the mode must change within 1 second of the device being rotated. In all modes, the display must have the text and icons displayed as large as reasonably possible - more than 60% of the display must contain information.
 
