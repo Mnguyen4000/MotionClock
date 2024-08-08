@@ -14,3 +14,6 @@ Note:
 Missing u8g2_fonts.c file in MotionClock/AtmelStudioFiles/GccApplication1
 
 Need to get it from the u8g2 library to fully function the code. Could not upload due to 25Mb capping on github.
+
+## Components used:
+SSD1306, ADXL343, Seeeduino Xiao, Atmega328P, MCP7940N
