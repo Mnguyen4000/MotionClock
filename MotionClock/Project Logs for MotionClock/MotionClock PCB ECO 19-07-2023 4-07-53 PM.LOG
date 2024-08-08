@@ -1,0 +1,151 @@
+Added Component: Designator=BT1(Main Battery Pins)
+Added Component: Designator=BT2(Cell Holder)
+Added Component: Designator=C1(Capacitor)
+Added Component: Designator=C2(Capacitor)
+Added Component: Designator=C3(Capacitor)
+Added Component: Designator=C4(Capacitor)
+Added Component: Designator=D1(LED)
+Added Component: Designator=D2(LED)
+Added Component: Designator=D3(LED)
+Added Component: Designator=D4(LED)
+Added Component: Designator=D5(LED)
+Added Component: Designator=JP1(Jumper)
+Added Component: Designator=JP2(ISP Header)
+Added Component: Designator=LS1(Piezzo Buzzer)
+Added Component: Designator=R3(Resistor)
+Added Component: Designator=R4(Resistor)
+Added Component: Designator=R7(Resistor)
+Added Component: Designator=R8(Resistor)
+Added Component: Designator=R9(Resistor)
+Added Component: Designator=R10(Resistor)
+Added Component: Designator=R11(Resistor)
+Added Component: Designator=R12(Resistor)
+Added Component: Designator=SW1(Pushbutton)
+Added Component: Designator=SW2(SPDT)
+Added Component: Designator=U1(Seeduino Xiao)
+Added Component: Designator=U2(Atmega328p)
+Added Component: Designator=U3(AM2320)
+Added Component: Designator=U4(Accel)
+Added Component: Designator=U6(MCP7940N)
+Added Component: Designator=Y1(16MHz Crystal)
+Added Component: Designator=Y2(32.768kHz)
+Added Pin To Net: NetName=GND Pin=C1-1
+Added Pin To Net: NetName=NetC1_2 Pin=C1-2
+Added Pin To Net: NetName=NetC2_1 Pin=C2-1
+Added Pin To Net: NetName=GND Pin=C2-2
+Added Pin To Net: NetName=GND Pin=C3-1
+Added Pin To Net: NetName=+3V3 Pin=C3-2
+Added Pin To Net: NetName=+3V3 Pin=C4-1
+Added Pin To Net: NetName=GND Pin=C4-2
+Added Pin To Net: NetName=+3V3 Pin=JP1-1
+Added Pin To Net: NetName=NetBT1_1 Pin=JP1-2
+Added Pin To Net: NetName=NetJP2_1 Pin=JP2-1
+Added Pin To Net: NetName=NetJP2_2 Pin=JP2-2
+Added Pin To Net: NetName=NetJP2_3 Pin=JP2-3
+Added Pin To Net: NetName=+3V3 Pin=JP2-4
+Added Pin To Net: NetName=NetJP2_5 Pin=JP2-5
+Added Pin To Net: NetName=GND Pin=JP2-6
+Added Pin To Net: NetName=+3V3 Pin=R3-1
+Added Pin To Net: NetName=NetJP2_3 Pin=R3-2
+Added Pin To Net: NetName=NetR4_1 Pin=R4-1
+Added Pin To Net: NetName=NetR4_2 Pin=R4-2
+Added Pin To Net: NetName=NetR7_1 Pin=R7-1
+Added Pin To Net: NetName=NetD2_1 Pin=R7-2
+Added Pin To Net: NetName=NetR8_1 Pin=R8-1
+Added Pin To Net: NetName=NetD3_1 Pin=R8-2
+Added Pin To Net: NetName=NetD5_1 Pin=R9-1
+Added Pin To Net: NetName=NetR9_2 Pin=R9-2
+Added Pin To Net: NetName=NetD4_1 Pin=R10-1
+Added Pin To Net: NetName=NetR10_2 Pin=R10-2
+Added Pin To Net: NetName=NetR11_1 Pin=R11-1
+Added Pin To Net: NetName=+3V3 Pin=R11-2
+Added Pin To Net: NetName=NetR11_1 Pin=R12-1
+Added Pin To Net: NetName=+3V3 Pin=R12-2
+Added Pin To Net: NetName=NetJP2_3 Pin=SW1-1
+Added Pin To Net: NetName=GND Pin=SW1-2
+Added Pin To Net: NetName=NetSW1_3 Pin=SW1-3
+Added Pin To Net: NetName=NetSW1_3 Pin=SW1-3
+Added Pin To Net: NetName=NetR4_1 Pin=SW2-1
+Added Pin To Net: NetName=NetLS1_2 Pin=SW2-2
+Added Pin To Net: NetName=NetD1_1 Pin=SW2-3
+Added Pin To Net: NetName=+3V3 Pin=U1-1
+Added Pin To Net: NetName=GND Pin=U1-2
+Added Pin To Net: NetName=NetU1_3 Pin=U1-3
+Added Pin To Net: NetName=NetU1_4 Pin=U1-4
+Added Pin To Net: NetName=NetSW1_3 Pin=U2-1
+Added Pin To Net: NetName=NetU1_4 Pin=U2-2
+Added Pin To Net: NetName=NetU1_3 Pin=U2-3
+Added Pin To Net: NetName=+3V3 Pin=U2-7
+Added Pin To Net: NetName=GND Pin=U2-8
+Added Pin To Net: NetName=NetC1_2 Pin=U2-9
+Added Pin To Net: NetName=NetC2_1 Pin=U2-10
+Added Pin To Net: NetName=NetR4_2 Pin=U2-12
+Added Pin To Net: NetName=NetR9_2 Pin=U2-13
+Added Pin To Net: NetName=NetR10_2 Pin=U2-14
+Added Pin To Net: NetName=NetJP2_1 Pin=U2-17
+Added Pin To Net: NetName=NetJP2_5 Pin=U2-18
+Added Pin To Net: NetName=NetJP2_2 Pin=U2-19
+Added Pin To Net: NetName=+3V3 Pin=U2-20
+Added Pin To Net: NetName=+3V3 Pin=U2-21
+Added Pin To Net: NetName=GND Pin=U2-22
+Added Pin To Net: NetName=NetR7_1 Pin=U2-23
+Added Pin To Net: NetName=NetU2_24 Pin=U2-24
+Added Pin To Net: NetName=NetR11_1 Pin=U2-27
+Added Pin To Net: NetName=NetR11_1 Pin=U2-28
+Added Pin To Net: NetName=+3V3 Pin=U3-1
+Added Pin To Net: NetName=GND Pin=U3-2
+Added Pin To Net: NetName=NetR11_1 Pin=U3-3
+Added Pin To Net: NetName=NetR11_1 Pin=U3-4
+Added Pin To Net: NetName=GND Pin=U4-1
+Added Pin To Net: NetName=NetR7_1 Pin=U4-2
+Added Pin To Net: NetName=GND Pin=U4-3
+Added Pin To Net: NetName=+3V3 Pin=U4-4
+Added Pin To Net: NetName=+3V3 Pin=U4-5
+Added Pin To Net: NetName=GND Pin=U4-7
+Added Pin To Net: NetName=NetR11_1 Pin=U4-8
+Added Pin To Net: NetName=NetR11_1 Pin=U4-9
+Added Pin To Net: NetName=NetR8_1 Pin=U4-10
+Added Pin To Net: NetName=NetU6_1 Pin=U6-1
+Added Pin To Net: NetName=NetU6_2 Pin=U6-2
+Added Pin To Net: NetName=GND Pin=U6-4
+Added Pin To Net: NetName=NetR11_1 Pin=U6-5
+Added Pin To Net: NetName=NetR11_1 Pin=U6-6
+Added Pin To Net: NetName=NetU2_24 Pin=U6-7
+Added Pin To Net: NetName=+3V3 Pin=U6-8
+Added Pin To Net: NetName=NetC2_1 Pin=Y1-1
+Added Pin To Net: NetName=NetC1_2 Pin=Y1-2
+Added Pin To Net: NetName=NetU6_1 Pin=Y2-1
+Added Pin To Net: NetName=NetU6_2 Pin=Y2-2
+Added Pin To Net: NetName=NetBT2_1 Pin=U6-3
+Added Net: Name=NetBT2_1
+Added Member To Class: ClassName=MotionClockSchematic Member=Component BT1 Main 3V3 Battery
+Added Member To Class: ClassName=MotionClockSchematic Member=Component BT2 Cell Battery
+Added Member To Class: ClassName=MotionClockSchematic Member=Component C1 20pF
+Added Member To Class: ClassName=MotionClockSchematic Member=Component C2 20pF
+Added Member To Class: ClassName=MotionClockSchematic Member=Component C3 100nF
+Added Member To Class: ClassName=MotionClockSchematic Member=Component C4 100nF
+Added Member To Class: ClassName=MotionClockSchematic Member=Component D1 LED
+Added Member To Class: ClassName=MotionClockSchematic Member=Component D2 Double Tap
+Added Member To Class: ClassName=MotionClockSchematic Member=Component D3 Single Tap
+Added Member To Class: ClassName=MotionClockSchematic Member=Component D4 TEST LED 2
+Added Member To Class: ClassName=MotionClockSchematic Member=Component D5 TEST LED 1
+Added Member To Class: ClassName=MotionClockSchematic Member=Component JP1 Jumper
+Added Member To Class: ClassName=MotionClockSchematic Member=Component JP2 ISP Headers
+Added Member To Class: ClassName=MotionClockSchematic Member=Component LS1 Piezzo Buzzer
+Added Member To Class: ClassName=MotionClockSchematic Member=Component R3 10k
+Added Member To Class: ClassName=MotionClockSchematic Member=Component R4 1k
+Added Member To Class: ClassName=MotionClockSchematic Member=Component R7 1k
+Added Member To Class: ClassName=MotionClockSchematic Member=Component R8 1k
+Added Member To Class: ClassName=MotionClockSchematic Member=Component R9 1k
+Added Member To Class: ClassName=MotionClockSchematic Member=Component R10 1k
+Added Member To Class: ClassName=MotionClockSchematic Member=Component R11 10k
+Added Member To Class: ClassName=MotionClockSchematic Member=Component R12 10k
+Added Member To Class: ClassName=MotionClockSchematic Member=Component SW1 Pushbutton
+Added Member To Class: ClassName=MotionClockSchematic Member=Component SW2 SPDT DIP Switch
+Added Member To Class: ClassName=MotionClockSchematic Member=Component U1 Seeduino Xiao
+Added Member To Class: ClassName=MotionClockSchematic Member=Component U2 Atmega328p
+Added Member To Class: ClassName=MotionClockSchematic Member=Component U3 AM2320
+Added Member To Class: ClassName=MotionClockSchematic Member=Component U4 Accelerometer
+Added Member To Class: ClassName=MotionClockSchematic Member=Component U6 MCP7940N
+Added Member To Class: ClassName=MotionClockSchematic Member=Component Y1 16MHz Crystal Oscil
+Added Member To Class: ClassName=MotionClockSchematic Member=Component Y2 32.768 kHz Crystal Oscil

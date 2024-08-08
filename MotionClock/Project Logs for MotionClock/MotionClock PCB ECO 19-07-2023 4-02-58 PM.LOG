@@ -1,0 +1,36 @@
+Added Component: Designator=U5(SSD1306)
+Added Pin To Net: NetName=+3V3 Pin=U5-1
+Added Net: Name=+3V3
+Added Pin To Net: NetName=GND Pin=U5-2
+Added Net: Name=GND
+Added Net: Name=NetBT1_1
+Added Net: Name=NetBT2_2
+Added Net: Name=NetC1_2
+Added Net: Name=NetC2_1
+Added Net: Name=NetD1_1
+Added Net: Name=NetD2_1
+Added Net: Name=NetD3_1
+Added Net: Name=NetD4_1
+Added Net: Name=NetD5_1
+Added Net: Name=NetJP2_1
+Added Net: Name=NetJP2_2
+Added Net: Name=NetJP2_3
+Added Net: Name=NetJP2_5
+Added Net: Name=NetLS1_2
+Added Net: Name=NetR4_1
+Added Net: Name=NetR4_2
+Added Net: Name=NetR7_1
+Added Net: Name=NetR8_1
+Added Net: Name=NetR9_2
+Added Net: Name=NetR10_2
+Added Pin To Net: NetName=NetR11_1 Pin=U5-3
+Added Pin To Net: NetName=NetR11_1 Pin=U5-4
+Added Net: Name=NetR11_1
+Added Net: Name=NetSW1_3
+Added Net: Name=NetU1_3
+Added Net: Name=NetU1_4
+Added Net: Name=NetU2_24
+Added Net: Name=NetU6_1
+Added Net: Name=NetU6_2
+Added Class: Name=MotionClockSchematic
+Added Room: Name=MotionClockSchematic
