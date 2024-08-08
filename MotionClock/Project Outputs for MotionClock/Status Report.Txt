@@ -1,0 +1,12 @@
+Output: NC Drill Files
+Type  : NC Drill
+From  : PCB Document [MotionClock.PcbDoc]
+   Generated File[MotionClock.TXT]
+   Generated File[MotionClock.LDP]
+   Generated File[MotionClock.DRR]
+
+
+Files Generated   : 3
+Documents Printed : 0
+
+Finished Output Generation At 3:28:53 PM On 1/08/2023
